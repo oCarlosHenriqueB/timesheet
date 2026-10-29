@@ -4,6 +4,7 @@ import '../api.dart';
 import '../budget.dart';
 import '../format.dart';
 import '../models.dart';
+import '../period.dart';
 import '../download.dart';
 import 'common.dart';
 import 'project_status.dart';
@@ -19,26 +20,23 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
+  Period period = Period.thisMonth();
   late Future<(List<Project>, List<ReportRow>)> data = _load();
 
   Future<(List<Project>, List<ReportRow>)> _load() async =>
-      (await widget.api.reportByProject(), await widget.api.reportByUser());
+      (await widget.api.reportByProject(period: period), await widget.api.reportByUser(period: period));
 
-  /// Baixa os lançamentos do período escolhido em CSV (para Excel ou importação no SAP).
+  void _setPeriod(Period p) => setState(() {
+        period = p;
+        data = _load();
+      });
+
+  /// Baixa em CSV os lançamentos do período selecionado (para Excel ou importação no SAP).
   Future<void> _export() async {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final range = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: today.add(const Duration(days: 365)),
-      initialDateRange: DateTimeRange(start: DateTime(today.year, today.month), end: today),
-      helpText: 'Período para exportar',
-    );
-    if (range == null || !mounted) return;
-    String day(DateTime d) => d.toIso8601String().substring(0, 10);
+    final p = period;
     await runWithFeedback(context, () async {
-      final bytes = await widget.api.exportEntriesCsv(from: range.start, to: range.end);
-      downloadFile(bytes, 'horas_${day(range.start)}_${day(range.end)}.csv');
+      final bytes = await widget.api.exportEntriesCsv(period: p);
+      downloadFile(bytes, 'horas_${p.fileSuffix}.csv');
     }, 'Arquivo de horas baixado.');
   }
 
@@ -48,17 +46,18 @@ class _ReportsPageState extends State<ReportsPage> {
       length: 2,
       child: Column(
         children: [
-          Row(children: [
-            const Expanded(child: TabBar(tabs: [Tab(text: 'Por projeto'), Tab(text: 'Por funcionário')])),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: TextButton.icon(
+          const TabBar(tabs: [Tab(text: 'Por projeto'), Tab(text: 'Por funcionário')]),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              Expanded(child: PeriodSelector(period: period, onChanged: _setPeriod)),
+              TextButton.icon(
                 onPressed: _export,
                 icon: const Icon(Icons.download_outlined),
                 label: const Text('Exportar CSV'),
               ),
-            ),
-          ]),
+            ]),
+          ),
           Expanded(
             child: FutureView(
               future: data,
@@ -91,15 +90,18 @@ class _ProjectReport extends StatelessWidget {
         final byHealth = projectHealth(b, today).index.compareTo(projectHealth(a, today).index);
         return byHealth != 0 ? byHealth : b.usedHours.compareTo(a.usedHours);
       });
-    final total = projects.fold<double>(0, (s, p) => s + p.usedHours);
+    final total = projects.fold<double>(0, (s, p) => s + p.periodHours);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
-        Text('Total geral: ${formatHours(total)}', style: Theme.of(context).textTheme.titleMedium),
+        Text('Horas no período: ${formatHours(total)}', style: Theme.of(context).textTheme.titleMedium),
+        Text('Saldo e cores consideram todas as horas do projeto, não só o período.',
+            style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 4),
         const HealthLegend(),
         const SizedBox(height: 8),
-        for (final p in sorted) ProjectStatusCard(project: p),
+        for (final p in sorted)
+          ProjectStatusCard(project: p, note: 'No período: ${formatHours(p.periodHours)}'),
       ],
     );
   }
@@ -117,7 +119,7 @@ class _ReportList extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Total geral: ${formatHours(total)}', style: Theme.of(context).textTheme.titleMedium),
+        Text('Horas no período: ${formatHours(total)}', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         for (final r in rows)
           Card(

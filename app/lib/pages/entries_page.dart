@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../models.dart';
+import '../period.dart';
 import 'common.dart';
 
 /// Lista os lançamentos do usuário logado e permite criar, editar e apagar.
@@ -16,10 +17,16 @@ class EntriesPage extends StatefulWidget {
 }
 
 class _EntriesPageState extends State<EntriesPage> {
+  Period period = Period.thisMonth();
   late Future<(List<Entry>, List<Project>)> data = _load();
 
   Future<(List<Entry>, List<Project>)> _load() async =>
-      (await widget.api.entries(), await widget.api.projects());
+      (await widget.api.entries(period: period), await widget.api.projects());
+
+  void _setPeriod(Period p) => setState(() {
+        period = p;
+        data = _load();
+      });
 
   void _reload() => setState(() => data = _load());
 
@@ -55,13 +62,18 @@ class _EntriesPageState extends State<EntriesPage> {
             icon: const Icon(Icons.add),
             label: const Text('Lançar horas'),
           ),
-          body: entries.isEmpty
-              ? const Center(child: Text('Nenhum lançamento ainda. Use "Lançar horas".'))
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          body: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                   children: [
-                    Text('Total: ${formatHours(total)} em ${entries.length} lançamento(s)',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    PeriodSelector(period: period, onChanged: _setPeriod),
+                    if (entries.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 48),
+                        child: Center(child: Text('Nenhum lançamento neste período. Use "Lançar horas".')),
+                      )
+                    else
+                      Text('Total: ${formatHours(total)} em ${entries.length} lançamento(s)',
+                          style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     for (final e in entries)
                       Card(

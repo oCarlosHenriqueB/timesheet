@@ -231,3 +231,30 @@ def test_exporta_horas_csv_por_periodo(client):
     assert lines[0] == "data;projeto;pep;ordem_venda;cliente;funcionario;email;horas;descricao"
     assert lines[1:] == ['15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Técnica;ana@exemplo.com;2,50;Visita']
     assert client.get("/exports/entries.csv", headers=ana).status_code == 403
+
+
+# ---------- filtro por período ----------
+
+
+def test_filtro_por_periodo(client):
+    gestor = login(client, "gestor@exemplo.com")
+    ana = login(client, "ana@exemplo.com")
+    pid = client.post("/projects", headers=gestor, json={"code": "PER-1", "client": "C", "budget_hours": 100}).json()["id"]
+    for day, hours in (("2020-01-10", 2), ("2020-01-31", 3), ("2020-02-01", 5)):
+        client.post("/entries", headers=ana, json={"project_id": pid, "work_date": day, "hours": hours})
+    jan = "date_from=2020-01-01&date_to=2020-01-31"
+
+    mine = client.get(f"/entries?{jan}", headers=ana).json()
+    assert sorted(e["hours"] for e in mine) == [2, 3]  # datas inclusivas
+    assert [e["hours"] for e in client.get("/entries?date_from=2020-02-01&date_to=2020-02-29", headers=ana).json()] == [5]
+    # gestor vê todos no período; técnico continua vendo só os seus
+    assert len(client.get(f"/entries?all_users=true&{jan}", headers=gestor).json()) == 2
+
+    proj = next(p for p in client.get(f"/reports/by-project?{jan}", headers=gestor).json() if p["id"] == pid)
+    assert proj["total_hours"] == 5  # no período
+    assert proj["used_hours"] == 10  # saldo considera tudo
+    assert proj["period_people"] == 1
+
+    users = {u["name"]: u for u in client.get(f"/reports/by-user?{jan}", headers=gestor).json()}
+    assert users["Ana Técnica"]["total_hours"] == 5
+    assert users["Bruno Engenheiro"]["total_hours"] == 0  # aparece mesmo sem horas no período

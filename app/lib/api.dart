@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+import 'period.dart';
 
 /// Endereço da API. Troque com: flutter run --dart-define=API_URL=http://...
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8000');
@@ -78,8 +79,13 @@ class Api {
   Future<void> createUser(String name, String email, String password, String role) =>
       _send('POST', '/users', {'name': name, 'email': email, 'password': password, 'role': role});
 
-  Future<List<Entry>> entries({bool allUsers = false}) async {
-    final data = await _send('GET', '/entries?all_users=$allUsers') as List;
+  /// Monta "?a=1&b=2" (ou "" sem parâmetros).
+  static String _qs(Map<String, String> params) =>
+      params.isEmpty ? '' : '?${Uri(queryParameters: params).query}';
+
+  Future<List<Entry>> entries({bool allUsers = false, Period? period}) async {
+    final params = {'all_users': '$allUsers', ...?period?.query};
+    final data = await _send('GET', '/entries${_qs(params)}') as List;
     return data.map((j) => Entry.fromJson(j)).toList();
   }
 
@@ -89,8 +95,8 @@ class Api {
 
   Future<void> deleteEntry(int id) => _send('DELETE', '/entries/$id');
 
-  Future<List<Project>> reportByProject() async {
-    final data = await _send('GET', '/reports/by-project') as List;
+  Future<List<Project>> reportByProject({Period? period}) async {
+    final data = await _send('GET', '/reports/by-project${_qs({...?period?.query})}') as List;
     return data.map((j) => Project.fromJson(j)).toList();
   }
 
@@ -111,10 +117,8 @@ class Api {
   }
 
   /// Lançamentos do período em CSV (layout próximo ao CATS do SAP).
-  Future<Uint8List> exportEntriesCsv({DateTime? from, DateTime? to}) async {
-    String day(DateTime d) => d.toIso8601String().substring(0, 10);
-    final query = [if (from != null) 'date_from=${day(from)}', if (to != null) 'date_to=${day(to)}'].join('&');
-    final uri = Uri.parse('$apiUrl/exports/entries.csv${query.isEmpty ? '' : '?$query'}');
+  Future<Uint8List> exportEntriesCsv({Period? period}) async {
+    final uri = Uri.parse('$apiUrl/exports/entries.csv${_qs({...?period?.query})}');
     final http.Response res;
     try {
       res = await http.get(uri, headers: _headers);
@@ -125,8 +129,8 @@ class Api {
     return res.bodyBytes;
   }
 
-  Future<List<ReportRow>> reportByUser() async {
-    final data = await _send('GET', '/reports/by-user') as List;
+  Future<List<ReportRow>> reportByUser({Period? period}) async {
+    final data = await _send('GET', '/reports/by-user${_qs({...?period?.query})}') as List;
     return data
         .map((j) => ReportRow(j['name'] as String, (j['total_hours'] as num).toDouble(),
             '${j['projects']} projeto(s)'))

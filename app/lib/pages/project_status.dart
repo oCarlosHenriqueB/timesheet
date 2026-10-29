@@ -7,9 +7,12 @@ import '../models.dart';
 /// Cartão de projeto com o saldo de horas e o prazo, cada um com seu selo colorido.
 /// Usado em Cadastros e no relatório por projeto.
 class ProjectStatusCard extends StatelessWidget {
-  const ProjectStatusCard({super.key, required this.project, this.trailing, this.onTap});
+  const ProjectStatusCard({super.key, required this.project, this.trailing, this.onTap, this.note});
 
   final Project project;
+
+  /// Texto extra no selo neutro, ex.: horas no período do relatório.
+  final String? note;
   final Widget? trailing;
   final VoidCallback? onTap;
 
@@ -53,6 +56,7 @@ class ProjectStatusCard extends StatelessWidget {
                     Wrap(spacing: 6, runSpacing: 4, children: [
                       StatusBadge(health: hours, label: hoursLabel(p)),
                       StatusBadge(health: dateHealth(p, today), label: dateLabel(p, today)),
+                      if (note != null) StatusBadge(health: Health.none, label: note!),
                       if (!p.active) const StatusBadge(health: Health.none, label: 'Inativo'),
                     ]),
                     if (budget == null) ...[

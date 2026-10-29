@@ -280,17 +280,34 @@ def _own_entry(conn, entry_id: int, user: dict):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Esse lançamento não é seu.")
 
 
+def period_filter(column: str, date_from: dt.date | None, date_to: dt.date | None) -> tuple[str, list]:
+    """Trecho SQL " AND coluna >= ? AND coluna <= ?" para o período (datas inclusivas)."""
+    sql, params = "", []
+    if date_from:
+        sql += f" AND {column} >= ?"
+        params.append(date_from.isoformat())
+    if date_to:
+        sql += f" AND {column} <= ?"
+        params.append(date_to.isoformat())
+    return sql, params
+
+
 @app.get("/entries")
-def list_entries(all_users: bool = False, user: dict = Depends(current_user)):
-    """Técnico vê só os próprios lançamentos; gestor pode pedir os de todos."""
+def list_entries(
+    all_users: bool = False,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    user: dict = Depends(current_user),
+):
+    """Técnico vê só os próprios lançamentos; gestor pode pedir os de todos. Período opcional."""
+    where, params = period_filter("e.work_date", date_from, date_to)
+    if not (all_users and user["role"] == "gestor"):
+        where += " AND e.user_id = ?"
+        params.append(user["id"])
     with connect() as conn:
-        if all_users and user["role"] == "gestor":
-            rows = conn.execute(ENTRY_SELECT + " ORDER BY e.work_date DESC, e.id DESC").fetchall()
-        else:
-            rows = conn.execute(
-                ENTRY_SELECT + " WHERE e.user_id = ? ORDER BY e.work_date DESC, e.id DESC",
-                (user["id"],),
-            ).fetchall()
+        rows = conn.execute(
+            ENTRY_SELECT + " WHERE 1 = 1" + where + " ORDER BY e.work_date DESC, e.id DESC", tuple(params)
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -328,21 +345,36 @@ def delete_entry(entry_id: int, user: dict = Depends(current_user)):
 
 
 @app.get("/reports/by-project")
-def report_by_project(_: dict = Depends(manager)):
+def report_by_project(
+    date_from: dt.date | None = None, date_to: dt.date | None = None, _: dict = Depends(manager)
+):
+    """total_hours = horas no período; used_hours (base do saldo) é sempre o total do projeto."""
+    where, params = period_filter("work_date", date_from, date_to)
+    sql = f"""SELECT x.*, COALESCE(pp.period_hours, 0) AS total_hours, COALESCE(pp.period_people, 0) AS period_people
+              FROM ({PROJECT_SELECT}) x
+              LEFT JOIN (
+                  SELECT project_id, SUM(hours) AS period_hours, COUNT(DISTINCT user_id) AS period_people
+                  FROM entries WHERE 1 = 1{where} GROUP BY project_id
+              ) pp ON pp.project_id = x.id
+              ORDER BY total_hours DESC, x.code"""
     with connect() as conn:
-        rows = conn.execute(PROJECT_SELECT + " ORDER BY used_hours DESC, p.code").fetchall()
-    return [_project_json(r) | {"total_hours": r["used_hours"]} for r in rows]
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return [_project_json(r) for r in rows]
 
 
 @app.get("/reports/by-user")
-def report_by_user(_: dict = Depends(manager)):
+def report_by_user(
+    date_from: dt.date | None = None, date_to: dt.date | None = None, _: dict = Depends(manager)
+):
+    where, params = period_filter("e.work_date", date_from, date_to)
     with connect() as conn:
         rows = conn.execute(
-            """SELECT u.id, u.name, COALESCE(SUM(e.hours), 0) AS total_hours,
-                      COUNT(DISTINCT e.project_id) AS projects
-               FROM users u LEFT JOIN entries e ON e.user_id = u.id
-               WHERE u.active = 1
-               GROUP BY u.id ORDER BY total_hours DESC, u.name"""
+            f"""SELECT u.id, u.name, COALESCE(SUM(e.hours), 0) AS total_hours,
+                       COUNT(DISTINCT e.project_id) AS projects
+                FROM users u LEFT JOIN entries e ON e.user_id = u.id{where}
+                WHERE u.active = 1
+                GROUP BY u.id ORDER BY total_hours DESC, u.name""",
+            tuple(params),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -388,13 +420,8 @@ def export_entries(date_from: dt.date | None = None, date_to: dt.date | None = N
                     p.sap_wbs, p.sap_sales_order, u.name AS user_name, u.email AS user_email
              FROM entries e JOIN users u ON u.id = e.user_id JOIN projects p ON p.id = e.project_id
              WHERE 1 = 1"""
-    params: list = []
-    if date_from:
-        sql += " AND e.work_date >= ?"
-        params.append(date_from.isoformat())
-    if date_to:
-        sql += " AND e.work_date <= ?"
-        params.append(date_to.isoformat())
+    where, params = period_filter("e.work_date", date_from, date_to)
+    sql += where
     with connect() as conn:
         rows = [dict(r) for r in conn.execute(sql + " ORDER BY e.work_date, u.name", tuple(params)).fetchall()]
     name = f"horas_{date_from or 'inicio'}_{date_to or 'hoje'}.csv"

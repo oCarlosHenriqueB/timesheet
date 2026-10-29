@@ -52,6 +52,16 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 - **Cliente automático:** veja [Integração com SAP](#integração-com-sap-v03): o botão "Buscar no SAP" preenche
   cliente, horas e entrega a partir do número do projeto.
 
+## v0.4: filtro por período
+
+- **Minhas horas** e **Relatórios** têm o seletor de período: *Esta semana* (segunda a domingo), *Este mês*
+  (padrão), *Mês passado*, *Últimos 30 dias*, *Tudo* ou *Escolher datas…*.
+- Nos relatórios, as horas mostradas e o **Exportar CSV** seguem o período escolhido. O saldo e as cores
+  dos projetos continuam considerando **todas** as horas do projeto, não só as do período.
+- Calendários e textos padrão do app em português.
+- API: `date_from` e `date_to` (datas inclusivas, `aaaa-mm-dd`) em `/entries`, `/reports/by-project`,
+  `/reports/by-user` e `/exports/entries.csv`.
+
 ## Integração com SAP (v0.3)
 
 O app ainda **não acessa o SAP da empresa**: isso depende do TI. O que já existe deixa a integração pronta
@@ -221,7 +231,7 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 
 ## Próximos passos
 
-1. Filtro por período (semana/mês) nos lançamentos e relatórios
+1. ~~Filtro por período (semana/mês) nos lançamentos e relatórios~~ (feito na v0.4)
 2. ~~Exportar CSV/Excel~~ (feito na v0.3)
 3. Aprovação de horas pelo gestor
 4. Cronômetro por projeto

@@ -31,7 +31,8 @@ class Project {
     this.people = 0,
     this.sapWbs = '',
     this.sapSalesOrder = '',
-  });
+    double? periodHours,
+  }) : periodHours = periodHours ?? usedHours;
 
   final int id;
 
@@ -46,8 +47,12 @@ class Project {
 
   /// Data de entrega, opcional.
   final DateTime? dueDate;
+  /// Total lançado no projeto (base do saldo).
   final double usedHours;
   final int people;
+
+  /// Horas lançadas no período filtrado do relatório (igual a [usedHours] sem filtro).
+  final double periodHours;
 
   /// Elemento PEP e ordem de venda no SAP, para casar os dados na integração.
   final String sapWbs;
@@ -70,6 +75,7 @@ class Project {
         people: j['people'] ?? 0,
         sapWbs: j['sap_wbs'] ?? '',
         sapSalesOrder: j['sap_sales_order'] ?? '',
+        periodHours: (j['total_hours'] as num?)?.toDouble(),
       );
 }
 
