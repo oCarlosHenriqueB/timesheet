@@ -156,6 +156,10 @@ def test_banco_antigo_ganha_colunas_novas(tmp_path, monkeypatch):
     old = sqlite3.connect(path)
     old.execute("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
     old.execute("INSERT INTO projects (code, name) VALUES ('OLD-1', 'Antigo')")
+    old.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
+    old.execute("INSERT INTO users (name, email, password_hash, role) VALUES ('Ana', 'ana@x.com', 'h', 'tecnico')")
+    old.execute("CREATE TABLE entries (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, project_id INTEGER NOT NULL, work_date TEXT NOT NULL, hours REAL NOT NULL, description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))")
+    old.execute("INSERT INTO entries (user_id, project_id, work_date, hours) VALUES (1, 1, '2026-10-01', 3.5)")
     old.commit()
     old.close()
 
@@ -164,4 +168,6 @@ def test_banco_antigo_ganha_colunas_novas(tmp_path, monkeypatch):
     db.init_db()  # rodar duas vezes não pode falhar
     with db.connect() as conn:
         row = dict(conn.execute("SELECT * FROM projects").fetchone())
+        entries = [dict(r) for r in conn.execute("SELECT project_id, hours FROM entries")]
     assert row["client"] == "" and row["budget_hours"] is None and row["due_date"] is None
+    assert entries == [{"project_id": 1, "hours": 3.5}]  # lançamentos antigos preservados

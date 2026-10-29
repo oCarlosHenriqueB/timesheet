@@ -35,18 +35,20 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 - Cadastro de projeto com **Projeto (número)**, **Cliente**, **Descrição** (opcional),
   **Horas previstas** e **Data de entrega** (as duas últimas opcionais). O gestor edita tudo menos o número.
 - **Saldo** = horas previstas − horas lançadas. A barra começa cheia e esvazia conforme a equipe lança horas.
-- A **cor** do projeto é a pior entre o saldo de horas e a data de entrega:
+- Cada projeto mostra **dois selos lado a lado**, um para as horas e outro para o prazo,
+  e a faixa lateral do cartão usa a pior das duas cores:
 
-| Cor | Saldo de horas | Data de entrega |
+| Cor | Horas (usadas do previsto) | Prazo (data de entrega) |
 |---|---|---|
-| Verde | mais de 30% | mais de 7 dias |
-| Amarelo | até 30% | até 7 dias |
-| Laranja | até 10% | até 2 dias (ou hoje) |
-| Vermelho | negativo (estourado) | vencida |
-| Cinza | sem horas previstas | sem data |
+| Verde | até 70% | faltam mais de 7 dias |
+| Amarelo | de 70% a 90% | faltam 7 dias ou menos (inclui hoje) |
+| Vermelho | acima de 90% | atrasada |
+| Roxo (destaque) | acima de 100%: "Estourado em X h" | — |
+| Cinza | "Sem horas previstas" | "Sem prazo" |
 
 - Aparece em **Cadastros** e em **Relatórios → Por projeto**, que lista primeiro os projetos mais críticos.
-- Projetos da v0.1 ganham as colunas novas sozinhos no próximo start da API e ficam cinza até o gestor editar.
+- Projetos da v0.1 ganham as colunas novas sozinhos no próximo start da API, sem perder lançamentos,
+  e ficam com selos cinza até o gestor editar e completar cliente, horas e prazo.
 - **Cliente automático (futuro):** hoje o cliente é digitado. A ideia é, ao digitar o número do projeto,
   buscar o cliente num cadastro de clientes ou no SAP; o campo `client` já existe para receber esse valor.
 
