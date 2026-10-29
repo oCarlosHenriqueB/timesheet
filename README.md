@@ -129,7 +129,7 @@ a API usa tokens aleatórios guardados no banco.
 1. **Neon** (<https://neon.tech>, entrar com GitHub): criar um projeto e copiar a *connection string*.
 2. **Render** (<https://render.com>, entrar com GitHub): *New → Blueprint*, escolher este repositório.
    O [render.yaml](render.yaml) cria o serviço; preencher `DATABASE_URL`, `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
-3. Conferir que <https://timesheet-api.onrender.com/health> responde `{"ok": true}`.
+3. Copiar a URL do serviço, que aparece no topo da página dele no Render (o nome `timesheet-api.onrender.com` já pertence a outra pessoa, então a sua tem um sufixo, ex.: `timesheet-api-xxxx.onrender.com`). Conferir que `<URL>/health` responde `{"ok": true}`.
 4. **GitHub**: em *Settings → Secrets and variables → Actions → Variables*, criar `API_URL` com a URL do Render
    e, em *Settings → Pages*, usar *Source: GitHub Actions*.
 5. Rodar o workflow [Deploy front](.github/workflows/pages.yml) (*Actions → Run workflow*). Ele também roda
