@@ -105,7 +105,7 @@ cd app && flutter test
 | Parte | Onde | Plano |
 |---|---|---|
 | Front (Flutter Web) | GitHub Pages: <https://ocarloshenriqueb.github.io/timesheet/> | grátis |
-| API (FastAPI) | Render, serviço `timesheet-api` | free: dorme após ~15 min parado, o 1º acesso demora até 1 min |
+| API (FastAPI) | Render, serviço `timesheet-api`: <https://timesheet-api-xp0u.onrender.com> | free: dorme após ~15 min parado, o 1º acesso demora até 1 min |
 | Banco | Neon Postgres | free, persistente |
 
 **Por que Postgres e não SQLite online:** o disco do plano grátis do Render é apagado a cada deploy
