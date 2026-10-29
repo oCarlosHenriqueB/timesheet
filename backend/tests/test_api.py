@@ -4,10 +4,16 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("TIMESHEET_DB", str(tmp_path / "test.db"))
-    from app import seed
+    """SQLite temporário por padrão. Com DATABASE_URL definida, roda contra esse
+    Postgres, apagando as tabelas antes de cada teste (use um banco de teste!)."""
+    from app import db, seed
     from app.main import app
 
+    monkeypatch.setenv("TIMESHEET_DB", str(tmp_path / "test.db"))
+    if db.database_url():
+        monkeypatch.setenv("SEED_PASSWORD", "demo123")
+        with db.connect() as conn:
+            conn.execute("DROP TABLE IF EXISTS tokens, entries, projects, users")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -88,3 +94,19 @@ def test_gestor_cria_usuario(client):
     assert client.post("/users", headers=gestor, json=body).status_code == 409
     r = client.post("/auth/login", json={"email": "novo@exemplo.com", "password": "segredo1"})
     assert r.status_code == 200
+
+
+def test_primeiro_gestor_vem_do_ambiente(tmp_path, monkeypatch):
+    from app import db
+    from app.main import app
+
+    if db.database_url():
+        pytest.skip("teste só para SQLite")
+    monkeypatch.setenv("TIMESHEET_DB", str(tmp_path / "vazio.db"))
+    monkeypatch.setenv("ADMIN_EMAIL", "Chefe@Exemplo.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "segredo-forte")
+    with TestClient(app) as c:
+        r = c.post("/auth/login", json={"email": "chefe@exemplo.com", "password": "segredo-forte"})
+        assert r.status_code == 200
+        assert r.json()["user"]["role"] == "gestor"
+        assert c.get("/health").json() == {"ok": True}

@@ -1,12 +1,14 @@
 """Popula o banco com dados FICTÍCIOS para demonstração. Uso: python -m app.seed"""
 
 import datetime as dt
+import os
 import random
+import sys
 
-from .db import connect, init_db
+from .db import connect, database_url, init_db
 from .security import hash_password
 
-DEMO_PASSWORD = "demo123"
+DEMO_PASSWORD = os.environ.get("SEED_PASSWORD", "demo123")
 
 USERS = [
     ("Gestora Demo", "gestor@exemplo.com", "gestor"),
@@ -26,9 +28,11 @@ DESCRIPTIONS = ["Visita técnica", "Montagem", "Relatório", "Calibração", "Re
 
 
 def run() -> None:
+    if database_url() and "SEED_PASSWORD" not in os.environ:
+        sys.exit("Banco remoto: defina SEED_PASSWORD para não publicar a senha padrão demo123.")
     init_db()
     with connect() as conn:
-        if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
+        if conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]:
             print("Banco já tem dados; nada a fazer.")
             return
         for name, email, role in USERS:
@@ -40,8 +44,8 @@ def run() -> None:
             conn.execute("INSERT INTO projects (code, name) VALUES (?, ?)", (code, name))
 
         rng = random.Random(42)
-        tech_ids = [r[0] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]
-        project_ids = [r[0] for r in conn.execute("SELECT id FROM projects")]
+        tech_ids = [r["id"] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]
+        project_ids = [r["id"] for r in conn.execute("SELECT id FROM projects")]
         today = dt.date.today()
         for days_ago in range(14):
             day = today - dt.timedelta(days=days_ago)

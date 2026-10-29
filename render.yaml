@@ -1,0 +1,25 @@
+# Blueprint do Render para a API. Os segredos (sync: false) são preenchidos
+# no painel do Render na hora de criar o serviço; nunca ficam no repositório.
+services:
+  - type: web
+    name: timesheet-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: CORS_ORIGINS
+        value: https://ocarloshenriqueb.github.io
+      - key: DATABASE_URL # string de conexão do Neon (postgresql://...?sslmode=require)
+        sync: false
+      - key: ADMIN_EMAIL # e-mail do primeiro gestor
+        sync: false
+      - key: ADMIN_PASSWORD # senha do primeiro gestor
+        sync: false
+      - key: ADMIN_NAME
+        value: Carlos

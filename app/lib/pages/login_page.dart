@@ -71,6 +71,14 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: busy ? null : _submit,
                   child: Text(busy ? 'Entrando…' : 'Entrar'),
                 ),
+                if (busy) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'O servidor gratuito dorme quando fica parado; o primeiro acesso pode levar até 1 minuto.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ],
             ),
           ),

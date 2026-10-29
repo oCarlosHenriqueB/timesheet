@@ -98,6 +98,51 @@ cd backend && .venv/bin/pytest
 cd app && flutter test
 ```
 
+## Deploy (versão de teste online)
+
+> **Só dados fictícios.** Colocar dados reais da Atlas Copco num servidor externo precisa do aval do TI da empresa.
+
+| Parte | Onde | Plano |
+|---|---|---|
+| Front (Flutter Web) | GitHub Pages: <https://ocarloshenriqueb.github.io/timesheet/> | grátis |
+| API (FastAPI) | Render, serviço `timesheet-api` | free: dorme após ~15 min parado, o 1º acesso demora até 1 min |
+| Banco | Neon Postgres | free, persistente |
+
+**Por que Postgres e não SQLite online:** o disco do plano grátis do Render é apagado a cada deploy
+ou reinício, então o arquivo `timesheet.db` sumiria. A API usa SQLite quando `DATABASE_URL` não existe
+(desenvolvimento) e Postgres quando existe (produção), com o mesmo SQL.
+
+### Variáveis de ambiente da API
+
+| Variável | Para quê |
+|---|---|
+| `DATABASE_URL` | String de conexão do Neon (`postgresql://…?sslmode=require`) |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Primeiro gestor, criado só se o banco estiver vazio. Depois ele cadastra os colegas pela tela **Cadastros** |
+| `CORS_ORIGINS` | Domínios do front que podem chamar a API, separados por vírgula (`https://ocarloshenriqueb.github.io`). Sem ela, só o localhost |
+| `SEED_PASSWORD` | Só para rodar `python -m app.seed` contra um banco remoto; o seed recusa usar a senha padrão `demo123` fora do local |
+
+Senhas e a URL do banco ficam só no painel do Render, nunca no repositório. Não há segredo de JWT:
+a API usa tokens aleatórios guardados no banco.
+
+### Passo a passo (uma vez)
+
+1. **Neon** (<https://neon.tech>, entrar com GitHub): criar um projeto e copiar a *connection string*.
+2. **Render** (<https://render.com>, entrar com GitHub): *New → Blueprint*, escolher este repositório.
+   O [render.yaml](render.yaml) cria o serviço; preencher `DATABASE_URL`, `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
+3. Conferir que <https://timesheet-api.onrender.com/health> responde `{"ok": true}`.
+4. **GitHub**: em *Settings → Secrets and variables → Actions → Variables*, criar `API_URL` com a URL do Render
+   e, em *Settings → Pages*, usar *Source: GitHub Actions*.
+5. Rodar o workflow [Deploy front](.github/workflows/pages.yml) (*Actions → Run workflow*). Ele também roda
+   sozinho a cada push que mexa em `app/`. A API é publicada de novo pelo Render a cada push na `main`.
+
+### Testar o modo Postgres localmente
+
+Com qualquer Postgres de teste (o banco é apagado a cada teste):
+
+```bash
+cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
+```
+
 ## API
 
 | Método | Rota | Quem |
@@ -117,5 +162,5 @@ cd app && flutter test
 2. Exportar CSV/Excel
 3. Aprovação de horas pelo gestor
 4. Cronômetro por projeto
-5. Para uso interno de verdade: Postgres, HTTPS, expiração de token, troca de senha,
+5. Para uso interno de verdade: expiração de token, troca de senha,
    hospedagem aprovada pela TI e política de dados (LGPD)

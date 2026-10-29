@@ -1,7 +1,7 @@
 """API do Timesheet: login, projetos, usuários, lançamentos de horas e relatórios."""
 
 import datetime as dt
-import sqlite3
+import os
 from contextlib import asynccontextmanager
 from typing import Literal
 
@@ -9,24 +9,50 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .db import connect, init_db
+from .db import IntegrityError, connect, init_db
 from .security import hash_password, new_token, verify_password
+
+
+def create_first_manager() -> None:
+    """Em produção não há seed: se o banco está vazio, cria o gestor a partir
+    de ADMIN_EMAIL / ADMIN_PASSWORD (variáveis de ambiente, nunca no código)."""
+    email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if not email or not password:
+        return
+    with connect() as conn:
+        if conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]:
+            return
+        conn.execute(
+            "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'gestor')",
+            (os.environ.get("ADMIN_NAME", "Gestor"), email, hash_password(password)),
+        )
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    create_first_manager()
     yield
 
 
-app = FastAPI(title="Timesheet API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Timesheet API", version="0.2.0", lifespan=lifespan)
 
-# O Flutter Web roda em outra porta do localhost durante o desenvolvimento.
+# Em produção, CORS_ORIGINS lista só o domínio do front (ex.: https://usuario.github.io).
+# Sem a variável, libera apenas o localhost, para o desenvolvimento.
+_origins = [o.strip().rstrip("/") for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=_origins,
+    allow_origin_regex=None if _origins else r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 
 # ---------- modelos ----------
@@ -131,13 +157,13 @@ def list_users(_: dict = Depends(manager)):
 def create_user(body: UserIn, _: dict = Depends(manager)):
     try:
         with connect() as conn:
-            cur = conn.execute(
-                "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)",
+            new_id = conn.execute(
+                "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?) RETURNING id",
                 (body.name.strip(), body.email.strip().lower(), hash_password(body.password), body.role),
-            )
-    except sqlite3.IntegrityError:
+            ).fetchone()["id"]
+    except IntegrityError:
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um usuário com esse e-mail.")
-    return {"id": cur.lastrowid}
+    return {"id": new_id}
 
 
 # ---------- projetos ----------
@@ -157,13 +183,13 @@ def list_projects(include_inactive: bool = False, _: dict = Depends(current_user
 def create_project(body: ProjectIn, _: dict = Depends(manager)):
     try:
         with connect() as conn:
-            cur = conn.execute(
-                "INSERT INTO projects (code, name) VALUES (?, ?)",
+            new_id = conn.execute(
+                "INSERT INTO projects (code, name) VALUES (?, ?) RETURNING id",
                 (body.code.strip().upper(), body.name.strip()),
-            )
-    except sqlite3.IntegrityError:
+            ).fetchone()["id"]
+    except IntegrityError:
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um projeto com esse código.")
-    return {"id": cur.lastrowid}
+    return {"id": new_id}
 
 
 @app.patch("/projects/{project_id}")
@@ -221,11 +247,11 @@ def list_entries(all_users: bool = False, user: dict = Depends(current_user)):
 def create_entry(body: EntryIn, user: dict = Depends(current_user)):
     with connect() as conn:
         _check_active_project(conn, body.project_id)
-        cur = conn.execute(
-            "INSERT INTO entries (user_id, project_id, work_date, hours, description) VALUES (?, ?, ?, ?, ?)",
+        new_id = conn.execute(
+            "INSERT INTO entries (user_id, project_id, work_date, hours, description) VALUES (?, ?, ?, ?, ?) RETURNING id",
             (user["id"], body.project_id, body.work_date.isoformat(), body.hours, body.description.strip()),
-        )
-    return {"id": cur.lastrowid}
+        ).fetchone()["id"]
+    return {"id": new_id}
 
 
 @app.put("/entries/{entry_id}")
