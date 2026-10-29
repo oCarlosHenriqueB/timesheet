@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, entries, projects, users")
+            conn.execute("DROP TABLE IF EXISTS tokens, entries, projects, users, sap_catalog")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -171,3 +171,63 @@ def test_banco_antigo_ganha_colunas_novas(tmp_path, monkeypatch):
         entries = [dict(r) for r in conn.execute("SELECT project_id, hours FROM entries")]
     assert row["client"] == "" and row["budget_hours"] is None and row["due_date"] is None
     assert entries == [{"project_id": 1, "hours": 3.5}]  # lançamentos antigos preservados
+
+
+# ---------- SAP ----------
+
+
+def test_catalogo_sap_importa_e_busca(client):
+    gestor = login(client, "gestor@exemplo.com")
+    ana = login(client, "ana@exemplo.com")
+    # O seed já importou docs/catalogo_sap_exemplo.csv
+    r = client.get("/sap/projects/prj-005", headers=gestor)
+    assert r.status_code == 200
+    assert r.json() == {
+        "code": "PRJ-005", "client": "Laboratório Exemplo E", "sap_wbs": "BR-PRJ-005-01",
+        "sap_sales_order": "4500001005", "budget_hours": 35.5, "due_date": "2026-11-30",
+    }
+    assert client.get("/sap/projects/NAO-EXISTE", headers=gestor).status_code == 404
+    assert client.get("/sap/projects/PRJ-005", headers=ana).status_code == 403
+
+    # Colado do Excel (tab), atualiza um existente e acusa linhas ruins sem travar as boas
+    pasted = "Projeto\tCliente\tHoras_previstas\tData_entrega\nPRJ-005\tCliente Novo\t1.234,5\t01/02/2027\nPRJ-007\tX\tabc\t\nPRJ-008\tY\t10\t31/02/2027\n"
+    r = client.post("/sap/catalog", headers=gestor, json={"csv": pasted}).json()
+    assert r["imported"] == 1 and len(r["errors"]) == 2
+    found = client.get("/sap/projects/PRJ-005", headers=gestor).json()
+    assert (found["client"], found["budget_hours"], found["due_date"]) == ("Cliente Novo", 1234.5, "2027-02-01")
+
+
+def test_catalogo_sem_colunas_obrigatorias(client):
+    gestor = login(client, "gestor@exemplo.com")
+    r = client.post("/sap/catalog", headers=gestor, json={"csv": "numero;nome\n1;a\n"}).json()
+    assert r["imported"] == 0 and "Faltam as colunas" in r["errors"][0]
+
+
+def test_provedor_sap_direto_ainda_nao_existe(client, monkeypatch):
+    gestor = login(client, "gestor@exemplo.com")
+    monkeypatch.setenv("SAP_PROVIDER", "odata")
+    assert client.get("/sap/projects/PRJ-001", headers=gestor).status_code == 501
+
+
+def test_projeto_guarda_referencias_sap(client):
+    gestor = login(client, "gestor@exemplo.com")
+    body = {"code": "prj-950", "client": "C", "sap_wbs": "BR-950", "sap_sales_order": "450"}
+    pid = client.post("/projects", headers=gestor, json=body).json()["id"]
+    client.patch(f"/projects/{pid}", headers=gestor, json={"sap_sales_order": "451"})
+    p = next(p for p in client.get("/projects", headers=gestor).json() if p["id"] == pid)
+    assert (p["sap_wbs"], p["sap_sales_order"]) == ("BR-950", "451")
+
+
+def test_exporta_horas_csv_por_periodo(client):
+    gestor = login(client, "gestor@exemplo.com")
+    ana = login(client, "ana@exemplo.com")
+    pid = client.post("/projects", headers=gestor, json={"code": "EXP-1", "client": "Cliente; com ponto e vírgula", "sap_wbs": "BR-EXP"}).json()["id"]
+    client.post("/entries", headers=ana, json={"project_id": pid, "work_date": "2020-01-15", "hours": 2.5, "description": "Visita"})
+    client.post("/entries", headers=ana, json={"project_id": pid, "work_date": "2020-03-01", "hours": 1})
+
+    r = client.get("/exports/entries.csv?date_from=2020-01-01&date_to=2020-01-31", headers=gestor)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    lines = r.content.decode("utf-8-sig").splitlines()
+    assert lines[0] == "data;projeto;pep;ordem_venda;cliente;funcionario;email;horas;descricao"
+    assert lines[1:] == ['15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Técnica;ana@exemplo.com;2,50;Visita']
+    assert client.get("/exports/entries.csv", headers=ana).status_code == 403

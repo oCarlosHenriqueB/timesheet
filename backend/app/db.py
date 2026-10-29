@@ -44,6 +44,18 @@ CREATE TABLE IF NOT EXISTS tokens (
     user_id    INTEGER NOT NULL REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Cópia dos projetos do SAP, importada de um arquivo exportado do SAP.
+-- Enquanto não houver conexão direta, é daqui que vem o "cliente automático".
+CREATE TABLE IF NOT EXISTS sap_catalog (
+    code            TEXT PRIMARY KEY,
+    client          TEXT NOT NULL DEFAULT '',
+    sap_wbs         TEXT NOT NULL DEFAULT '',
+    sap_sales_order TEXT NOT NULL DEFAULT '',
+    budget_hours    REAL,
+    due_date        TEXT,
+    imported_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 POSTGRES_SCHEMA = (
@@ -106,6 +118,9 @@ MIGRATIONS = [
     ("projects", "client", "TEXT NOT NULL DEFAULT ''"),
     ("projects", "budget_hours", "REAL"),
     ("projects", "due_date", "TEXT"),
+    # Referências para casar o projeto com o SAP (elemento PEP/WBS e ordem de venda).
+    ("projects", "sap_wbs", "TEXT NOT NULL DEFAULT ''"),
+    ("projects", "sap_sales_order", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

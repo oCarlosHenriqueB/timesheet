@@ -5,6 +5,7 @@ import '../models.dart';
 import 'common.dart';
 import 'project_dialog.dart';
 import 'project_status.dart';
+import 'sap_import_dialog.dart';
 
 /// Cadastro de projetos e usuários (só gestores).
 class AdminPage extends StatefulWidget {
@@ -27,7 +28,7 @@ class _AdminPageState extends State<AdminPage> {
   Future<void> _editProject([Project? project]) async {
     final draft = await showDialog<ProjectDraft>(
       context: context,
-      builder: (_) => ProjectDialog(project: project),
+      builder: (_) => ProjectDialog(project: project, onSapLookup: widget.api.lookupSapProject),
     );
     if (draft == null || !mounted) return;
     await runWithFeedback(
@@ -36,6 +37,10 @@ class _AdminPageState extends State<AdminPage> {
       project == null ? 'Projeto criado.' : 'Projeto atualizado.',
     );
     _reload();
+  }
+
+  Future<void> _importSap() async {
+    await showDialog<bool>(context: context, builder: (_) => SapImportDialog(api: widget.api));
   }
 
   Future<void> _newUser() async {
@@ -72,6 +77,11 @@ class _AdminPageState extends State<AdminPage> {
           children: [
             Row(children: [
               Expanded(child: Text('Projetos', style: titleStyle)),
+              TextButton.icon(
+                onPressed: _importSap,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('Catálogo SAP'),
+              ),
               TextButton.icon(onPressed: _editProject, icon: const Icon(Icons.add), label: const Text('Novo')),
             ]),
             const HealthLegend(),

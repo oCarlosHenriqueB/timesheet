@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -91,6 +92,37 @@ class Api {
   Future<List<Project>> reportByProject() async {
     final data = await _send('GET', '/reports/by-project') as List;
     return data.map((j) => Project.fromJson(j)).toList();
+  }
+
+  /// Dados do projeto no SAP pelo número; null se não estiver no catálogo.
+  Future<ProjectDraft?> lookupSapProject(String code) async {
+    try {
+      return ProjectDraft.fromSap(await _send('GET', '/sap/projects/${Uri.encodeComponent(code.trim())}'));
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Importa o catálogo de projetos do SAP; devolve (quantos importou, erros por linha).
+  Future<(int, List<String>)> importSapCatalog(String csv) async {
+    final data = await _send('POST', '/sap/catalog', {'csv': csv});
+    return (data['imported'] as int, (data['errors'] as List).cast<String>());
+  }
+
+  /// Lançamentos do período em CSV (layout próximo ao CATS do SAP).
+  Future<Uint8List> exportEntriesCsv({DateTime? from, DateTime? to}) async {
+    String day(DateTime d) => d.toIso8601String().substring(0, 10);
+    final query = [if (from != null) 'date_from=${day(from)}', if (to != null) 'date_to=${day(to)}'].join('&');
+    final uri = Uri.parse('$apiUrl/exports/entries.csv${query.isEmpty ? '' : '?$query'}');
+    final http.Response res;
+    try {
+      res = await http.get(uri, headers: _headers);
+    } catch (_) {
+      throw ApiException('Não foi possível falar com a API em $apiUrl. Ela está rodando?');
+    }
+    if (res.statusCode >= 400) throw ApiException('Erro ${res.statusCode} ao exportar.', res.statusCode);
+    return res.bodyBytes;
   }
 
   Future<List<ReportRow>> reportByUser() async {

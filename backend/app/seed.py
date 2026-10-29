@@ -5,8 +5,13 @@ import os
 import random
 import sys
 
+from pathlib import Path
+
+from . import sap
 from .db import connect, database_url, init_db
 from .security import hash_password
+
+CATALOG_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "catalogo_sap_exemplo.csv"
 
 DEMO_PASSWORD = os.environ.get("SEED_PASSWORD", "demo123")
 
@@ -45,9 +50,12 @@ def run() -> None:
         for code, client, name, budget, due_in in PROJECTS:
             due = (today + dt.timedelta(days=due_in)).isoformat() if due_in is not None else None
             conn.execute(
-                "INSERT INTO projects (code, client, name, budget_hours, due_date) VALUES (?, ?, ?, ?, ?)",
-                (code, client, name, budget, due),
+                "INSERT INTO projects (code, client, name, budget_hours, due_date, sap_wbs) VALUES (?, ?, ?, ?, ?, ?)",
+                (code, client, name, budget, due, f"BR-{code}-01" if code.startswith("PRJ") else ""),
             )
+        if CATALOG_EXAMPLE.exists():  # catálogo SAP fictício, para testar o "buscar no SAP"
+            rows, _ = sap.parse_catalog(CATALOG_EXAMPLE.read_text(encoding="utf-8"))
+            sap.import_catalog(conn, rows)
 
         rng = random.Random(42)
         tech_ids = [r["id"] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]

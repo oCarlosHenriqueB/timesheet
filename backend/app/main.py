@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from . import sap
 from .db import IntegrityError, connect, init_db
 from .security import hash_password, new_token, verify_password
 
@@ -78,6 +80,8 @@ class ProjectIn(BaseModel):
     name: str = ""  # descrição, opcional
     budget_hours: float | None = Field(default=None, gt=0)  # horas previstas
     due_date: dt.date | None = None  # data de entrega
+    sap_wbs: str = ""  # elemento PEP no SAP
+    sap_sales_order: str = ""  # ordem de venda no SAP
 
 
 class ProjectPatch(BaseModel):
@@ -87,6 +91,8 @@ class ProjectPatch(BaseModel):
     name: str | None = None
     budget_hours: float | None = Field(default=None, gt=0)
     due_date: dt.date | None = None
+    sap_wbs: str | None = None
+    sap_sales_order: str | None = None
     active: bool | None = None
 
 
@@ -180,7 +186,7 @@ def create_user(body: UserIn, _: dict = Depends(manager)):
 # Projeto com as horas já lançadas; o saldo (budget_hours - used_hours) e a
 # cor de alerta são calculados no app.
 PROJECT_SELECT = """
-SELECT p.id, p.code, p.client, p.name, p.active, p.budget_hours, p.due_date,
+SELECT p.id, p.code, p.client, p.name, p.active, p.budget_hours, p.due_date, p.sap_wbs, p.sap_sales_order,
        COALESCE(u.used_hours, 0) AS used_hours, COALESCE(u.people, 0) AS people
 FROM projects p
 LEFT JOIN (
@@ -209,14 +215,16 @@ def create_project(body: ProjectIn, _: dict = Depends(manager)):
     try:
         with connect() as conn:
             new_id = conn.execute(
-                """INSERT INTO projects (code, client, name, budget_hours, due_date)
-                   VALUES (?, ?, ?, ?, ?) RETURNING id""",
+                """INSERT INTO projects (code, client, name, budget_hours, due_date, sap_wbs, sap_sales_order)
+                   VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
                 (
                     body.code.strip().upper(),
                     body.client.strip(),
                     body.name.strip(),
                     body.budget_hours,
                     body.due_date.isoformat() if body.due_date else None,
+                    body.sap_wbs.strip(),
+                    body.sap_sales_order.strip(),
                 ),
             ).fetchone()["id"]
     except IntegrityError:
@@ -232,7 +240,7 @@ def update_project(project_id: int, body: ProjectPatch, _: dict = Depends(manage
         if field == "active":
             if value is not None:
                 changes["active"] = int(value)
-        elif field in ("client", "name"):
+        elif field in ("client", "name", "sap_wbs", "sap_sales_order"):
             if value is not None:
                 changes[field] = value.strip()
         elif field == "due_date":
@@ -337,3 +345,61 @@ def report_by_user(_: dict = Depends(manager)):
                GROUP BY u.id ORDER BY total_hours DESC, u.name"""
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------- SAP (veja app/sap.py) ----------
+
+
+class CatalogIn(BaseModel):
+    csv: str
+
+
+@app.get("/sap/projects/{code}")
+def sap_lookup_project(code: str, _: dict = Depends(manager)):
+    """Busca no SAP os dados do projeto pelo número, para preencher o cadastro."""
+    with connect() as conn:
+        try:
+            found = sap.lookup_project(conn, code)
+        except sap.SapNotConfigured as e:
+            raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(e))
+    if found is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Projeto não encontrado no catálogo do SAP.")
+    return found
+
+
+@app.post("/sap/catalog")
+def sap_import_catalog(body: CatalogIn, _: dict = Depends(manager)):
+    """Importa o catálogo de projetos exportado do SAP (CSV ou colado do Excel)."""
+    rows, errors = sap.parse_catalog(body.csv)
+    with connect() as conn:
+        imported = sap.import_catalog(conn, rows)
+    return {"imported": imported, "errors": errors}
+
+
+@app.get("/sap/catalog/template")
+def sap_catalog_template(_: dict = Depends(manager)):
+    return {"columns": sap.CATALOG_TEMPLATE.strip()}
+
+
+@app.get("/exports/entries.csv")
+def export_entries(date_from: dt.date | None = None, date_to: dt.date | None = None, _: dict = Depends(manager)):
+    """Lançamentos do período em CSV, num layout próximo ao do apontamento de horas do SAP (CATS)."""
+    sql = """SELECT e.work_date, e.hours, e.description, p.code AS project_code, p.client,
+                    p.sap_wbs, p.sap_sales_order, u.name AS user_name, u.email AS user_email
+             FROM entries e JOIN users u ON u.id = e.user_id JOIN projects p ON p.id = e.project_id
+             WHERE 1 = 1"""
+    params: list = []
+    if date_from:
+        sql += " AND e.work_date >= ?"
+        params.append(date_from.isoformat())
+    if date_to:
+        sql += " AND e.work_date <= ?"
+        params.append(date_to.isoformat())
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(sql + " ORDER BY e.work_date, u.name", tuple(params)).fetchall()]
+    name = f"horas_{date_from or 'inicio'}_{date_to or 'hoje'}.csv"
+    return Response(
+        sap.export_entries_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )

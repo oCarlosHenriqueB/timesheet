@@ -4,6 +4,7 @@ import '../api.dart';
 import '../budget.dart';
 import '../format.dart';
 import '../models.dart';
+import '../download.dart';
 import 'common.dart';
 import 'project_status.dart';
 
@@ -23,13 +24,41 @@ class _ReportsPageState extends State<ReportsPage> {
   Future<(List<Project>, List<ReportRow>)> _load() async =>
       (await widget.api.reportByProject(), await widget.api.reportByUser());
 
+  /// Baixa os lançamentos do período escolhido em CSV (para Excel ou importação no SAP).
+  Future<void> _export() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: today.add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(start: DateTime(today.year, today.month), end: today),
+      helpText: 'Período para exportar',
+    );
+    if (range == null || !mounted) return;
+    String day(DateTime d) => d.toIso8601String().substring(0, 10);
+    await runWithFeedback(context, () async {
+      final bytes = await widget.api.exportEntriesCsv(from: range.start, to: range.end);
+      downloadFile(bytes, 'horas_${day(range.start)}_${day(range.end)}.csv');
+    }, 'Arquivo de horas baixado.');
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Column(
         children: [
-          const TabBar(tabs: [Tab(text: 'Por projeto'), Tab(text: 'Por funcionário')]),
+          Row(children: [
+            const Expanded(child: TabBar(tabs: [Tab(text: 'Por projeto'), Tab(text: 'Por funcionário')])),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: TextButton.icon(
+                onPressed: _export,
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Exportar CSV'),
+              ),
+            ),
+          ]),
           Expanded(
             child: FutureView(
               future: data,

@@ -49,8 +49,49 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 - Aparece em **Cadastros** e em **Relatórios → Por projeto**, que lista primeiro os projetos mais críticos.
 - Projetos da v0.1 ganham as colunas novas sozinhos no próximo start da API, sem perder lançamentos,
   e ficam com selos cinza até o gestor editar e completar cliente, horas e prazo.
-- **Cliente automático (futuro):** hoje o cliente é digitado. A ideia é, ao digitar o número do projeto,
-  buscar o cliente num cadastro de clientes ou no SAP; o campo `client` já existe para receber esse valor.
+- **Cliente automático:** veja [Integração com SAP](#integração-com-sap-v03): o botão "Buscar no SAP" preenche
+  cliente, horas e entrega a partir do número do projeto.
+
+## Integração com SAP (v0.3)
+
+O app ainda **não acessa o SAP da empresa**: isso depende do TI. O que já existe deixa a integração pronta
+para ser ligada, e funciona hoje por troca de arquivos.
+
+### O que já funciona
+
+| Recurso | Onde | Como |
+|---|---|---|
+| Referências SAP no projeto | Cadastro de projeto | Campos opcionais **Elemento PEP** e **Ordem de venda**, para casar os dados com o SAP |
+| Catálogo de projetos do SAP | Cadastros → **Catálogo SAP** | Exporte a lista de projetos do SAP para Excel, copie e cole. Colunas: `projeto;cliente;pep;ordem_venda;horas_previstas;data_entrega` (obrigatórias: projeto e cliente). Aceita `;`, `,` ou tab, vírgula decimal e datas `dd/mm/aaaa` ou `dd.mm.aaaa`. Exemplo fictício em [docs/catalogo_sap_exemplo.csv](docs/catalogo_sap_exemplo.csv) |
+| Buscar no SAP | Novo projeto → ícone de nuvem ao lado do número | Preenche cliente, horas previstas, entrega, PEP e ordem de venda a partir do catálogo |
+| Exportar horas | Relatórios → **Exportar CSV** | Lançamentos do período em CSV para Excel (`;`, vírgula decimal, data `dd.mm.aaaa`), com projeto, PEP, ordem de venda, cliente, funcionário, horas e descrição. Layout próximo ao do apontamento de horas do SAP (CATS) |
+
+### Como o código está organizado
+
+Todo acesso ao SAP passa por [backend/app/sap.py](backend/app/sap.py). A origem dos dados é escolhida
+pela variável de ambiente `SAP_PROVIDER`:
+
+- `catalog` (padrão): tabela `sap_catalog`, preenchida pela importação acima.
+- `odata`: conexão direta com o SAP. Ainda não implementado; responde `501` até ser feito.
+
+Para ligar a conexão direta, basta implementar a busca em `lookup_project` (e, se o TI quiser, o envio de horas)
+sem mexer nas telas nem no resto da API.
+
+Rotas (só gestor): `GET /sap/projects/{numero}`, `POST /sap/catalog`, `GET /exports/entries.csv?date_from=&date_to=`.
+
+### Perguntas para o TI
+
+1. **Versão do SAP:** ECC ou S/4HANA? On-premise ou nuvem?
+2. **Onde ficam os projetos:** módulo PS (definição de projeto / elemento PEP), ordens de venda (SD, VA03) ou outro?
+   Qual campo liga o "número do projeto" que usamos ao SAP?
+3. **Para onde vão as horas:** apontamento no **CATS**? Com qual tipo de atividade e centro de custo?
+4. **Identificação do funcionário:** o SAP usa o **nº pessoal**. Onde buscamos esse número (hoje o export usa o e-mail)?
+5. **Forma de acesso liberada:** API OData, SAP BTP / Integration Suite, RFC/BAPI ou só troca de arquivos?
+6. **Rede e hospedagem:** o SAP está na rede interna. A API precisa rodar num servidor da empresa
+   ou passar por um conector aprovado (ex.: SAP Cloud Connector)? O Render, fora da empresa, não alcança o SAP.
+7. **Usuário técnico e aprovação:** quem cria o usuário de integração e aprova o uso de dados reais (LGPD)?
+
+> Até o TI aprovar, use só dados fictícios no catálogo e nos lançamentos.
 
 ## Stack
 
@@ -181,7 +222,7 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 ## Próximos passos
 
 1. Filtro por período (semana/mês) nos lançamentos e relatórios
-2. Exportar CSV/Excel
+2. ~~Exportar CSV/Excel~~ (feito na v0.3)
 3. Aprovação de horas pelo gestor
 4. Cronômetro por projeto
 5. Para uso interno de verdade: expiração de token, troca de senha,

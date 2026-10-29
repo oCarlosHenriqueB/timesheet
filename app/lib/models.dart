@@ -29,6 +29,8 @@ class Project {
     this.dueDate,
     this.usedHours = 0,
     this.people = 0,
+    this.sapWbs = '',
+    this.sapSalesOrder = '',
   });
 
   final int id;
@@ -47,6 +49,10 @@ class Project {
   final double usedHours;
   final int people;
 
+  /// Elemento PEP e ordem de venda no SAP, para casar os dados na integração.
+  final String sapWbs;
+  final String sapSalesOrder;
+
   /// Horas previstas menos as lançadas; negativo quando estoura.
   double? get remainingHours => budgetHours == null ? null : budgetHours! - usedHours;
 
@@ -62,6 +68,8 @@ class Project {
         dueDate: j['due_date'] == null ? null : DateTime.parse(j['due_date']),
         usedHours: (j['used_hours'] as num? ?? 0).toDouble(),
         people: j['people'] ?? 0,
+        sapWbs: j['sap_wbs'] ?? '',
+        sapSalesOrder: j['sap_sales_order'] ?? '',
       );
 }
 
@@ -73,13 +81,27 @@ class ProjectDraft {
     this.description = '',
     this.budgetHours,
     this.dueDate,
+    this.sapWbs = '',
+    this.sapSalesOrder = '',
   });
+
+  /// Dados vindos da busca no SAP (GET /sap/projects/{code}).
+  factory ProjectDraft.fromSap(Map<String, dynamic> j) => ProjectDraft(
+        code: j['code'],
+        client: j['client'] ?? '',
+        budgetHours: (j['budget_hours'] as num?)?.toDouble(),
+        dueDate: j['due_date'] == null ? null : DateTime.parse(j['due_date']),
+        sapWbs: j['sap_wbs'] ?? '',
+        sapSalesOrder: j['sap_sales_order'] ?? '',
+      );
 
   final String code;
   final String client;
   final String description;
   final double? budgetHours;
   final DateTime? dueDate;
+  final String sapWbs;
+  final String sapSalesOrder;
 
   Map<String, dynamic> toJson() => {
         'code': code,
@@ -87,6 +109,8 @@ class ProjectDraft {
         'name': description,
         'budget_hours': budgetHours,
         'due_date': dueDate?.toIso8601String().substring(0, 10),
+        'sap_wbs': sapWbs,
+        'sap_sales_order': sapSalesOrder,
       };
 }
 

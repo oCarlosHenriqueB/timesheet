@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 import '../format.dart';
 import '../models.dart';
 
-/// Formulário de projeto: número, cliente, descrição, horas previstas e entrega.
-/// Na edição o número do projeto fica travado.
+/// Formulário de projeto: número, cliente, descrição, horas previstas, entrega
+/// e as referências do SAP. Na edição o número do projeto fica travado.
 class ProjectDialog extends StatefulWidget {
-  const ProjectDialog({super.key, this.project});
+  const ProjectDialog({super.key, this.project, this.onSapLookup});
 
   final Project? project;
+
+  /// Busca o projeto no SAP pelo número (null quando não encontra).
+  /// Sem ele, o botão "Buscar no SAP" não aparece.
+  final Future<ProjectDraft?> Function(String code)? onSapLookup;
 
   @override
   State<ProjectDialog> createState() => _ProjectDialogState();
@@ -17,14 +21,50 @@ class ProjectDialog extends StatefulWidget {
 class _ProjectDialogState extends State<ProjectDialog> {
   final form = GlobalKey<FormState>();
   late final code = TextEditingController(text: widget.project?.code ?? '');
-  // No futuro o cliente poderá ser preenchido sozinho a partir do número do projeto.
   late final client = TextEditingController(text: widget.project?.client ?? '');
   late final description = TextEditingController(text: widget.project?.description ?? '');
   late final budget = TextEditingController(
       text: widget.project?.budgetHours == null ? '' : formatNumber(widget.project!.budgetHours!));
   late DateTime? dueDate = widget.project?.dueDate;
+  late final sapWbs = TextEditingController(text: widget.project?.sapWbs ?? '');
+  late final sapSalesOrder = TextEditingController(text: widget.project?.sapSalesOrder ?? '');
+  bool searching = false;
+  String? sapMessage;
 
   bool get editing => widget.project != null;
+
+  /// Preenche o formulário com o que o SAP tiver; campos vazios no SAP não apagam o que foi digitado.
+  Future<void> _lookupSap() async {
+    final number = code.text.trim();
+    if (number.isEmpty) {
+      setState(() => sapMessage = 'Digite o número do projeto primeiro.');
+      return;
+    }
+    setState(() {
+      searching = true;
+      sapMessage = null;
+    });
+    try {
+      final found = await widget.onSapLookup!(number);
+      setState(() {
+        if (found == null) {
+          sapMessage = 'Projeto não encontrado no catálogo do SAP. Preencha à mão.';
+          return;
+        }
+        void fill(TextEditingController c, String v) => v.isEmpty ? null : c.text = v;
+        fill(client, found.client);
+        fill(sapWbs, found.sapWbs);
+        fill(sapSalesOrder, found.sapSalesOrder);
+        if (found.budgetHours != null) budget.text = formatNumber(found.budgetHours!);
+        dueDate = found.dueDate ?? dueDate;
+        sapMessage = 'Dados preenchidos a partir do SAP. Confira antes de salvar.';
+      });
+    } catch (e) {
+      setState(() => sapMessage = '$e');
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
 
   Future<void> _pickDate() async {
     final today = DateUtils.dateOnly(DateTime.now());
@@ -47,6 +87,8 @@ class _ProjectDialogState extends State<ProjectDialog> {
         description: description.text.trim(),
         budgetHours: budget.text.trim().isEmpty ? null : parseHours(budget.text),
         dueDate: dueDate,
+        sapWbs: sapWbs.text.trim(),
+        sapSalesOrder: sapSalesOrder.text.trim(),
       ),
     );
   }
@@ -67,9 +109,30 @@ class _ProjectDialogState extends State<ProjectDialog> {
                 controller: code,
                 enabled: !editing,
                 autofocus: !editing,
-                decoration: const InputDecoration(labelText: 'Projeto (número)', hintText: 'ex.: PRJ-1234'),
+                decoration: InputDecoration(
+                  labelText: 'Projeto (número)',
+                  hintText: 'ex.: PRJ-1234',
+                  suffixIcon: editing || widget.onSapLookup == null
+                      ? null
+                      : searching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                            )
+                          : IconButton(
+                              tooltip: 'Buscar no SAP',
+                              icon: const Icon(Icons.cloud_download_outlined),
+                              onPressed: _lookupSap,
+                            ),
+                ),
+                onFieldSubmitted: editing || widget.onSapLookup == null ? null : (_) => _lookupSap(),
                 validator: _required,
               ),
+              if (sapMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(sapMessage!, style: Theme.of(context).textTheme.bodySmall),
+                ),
               TextFormField(
                 controller: client,
                 autofocus: editing,
@@ -114,6 +177,22 @@ class _ProjectDialogState extends State<ProjectDialog> {
                     icon: const Icon(Icons.clear),
                     onPressed: () => setState(() => dueDate = null),
                   ),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: sapWbs,
+                    decoration: const InputDecoration(labelText: 'Elemento PEP (SAP)', hintText: 'opcional'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: sapSalesOrder,
+                    decoration: const InputDecoration(labelText: 'Ordem de venda (SAP)', hintText: 'opcional'),
+                  ),
+                ),
               ]),
             ]),
           ),

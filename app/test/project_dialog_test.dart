@@ -62,4 +62,47 @@ void main() {
     expect(result?.description, 'Antigo');
     expect(result?.budgetHours, isNull);
   });
+
+  testWidgets('Buscar no SAP preenche cliente, horas, entrega e referências', (tester) async {
+    ProjectDraft? result;
+    Future<ProjectDraft?> lookup(String code) async => code == 'PRJ-005'
+        ? ProjectDraft(
+            code: 'PRJ-005',
+            client: 'Laboratório E',
+            budgetHours: 35.5,
+            dueDate: DateTime(2026, 11, 30),
+            sapWbs: 'BR-005',
+            sapSalesOrder: '4500001005',
+          )
+        : null;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async => result = await showDialog<ProjectDraft>(
+              context: context, builder: (_) => ProjectDialog(onSapLookup: lookup)),
+          child: const Text('abrir'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('abrir'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Projeto (número)'), 'NAO-EXISTE');
+    await tester.tap(find.byTooltip('Buscar no SAP'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('não encontrado no catálogo'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Projeto (número)'), 'PRJ-005');
+    await tester.tap(find.byTooltip('Buscar no SAP'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('preenchidos a partir do SAP'), findsOneWidget);
+    expect(find.text('30/11/2026'), findsOneWidget);
+
+    await tester.tap(find.text('Salvar'));
+    await tester.pumpAndSettle();
+    expect(result?.client, 'Laboratório E');
+    expect(result?.budgetHours, 35.5);
+    expect(result?.dueDate, DateTime(2026, 11, 30));
+    expect((result?.sapWbs, result?.sapSalesOrder), ('BR-005', '4500001005'));
+  });
 }
