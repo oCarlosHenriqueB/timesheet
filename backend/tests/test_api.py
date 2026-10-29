@@ -68,7 +68,7 @@ def test_nao_edita_lancamento_alheio(client):
 def test_projeto_inativo_nao_aceita_lancamento(client):
     gestor = login(client, "gestor@exemplo.com")
     ana = login(client, "ana@exemplo.com")
-    pid = client.post("/projects", headers=gestor, json={"code": "tmp-1", "name": "Temporário"}).json()["id"]
+    pid = client.post("/projects", headers=gestor, json={"code": "tmp-1", "client": "Cliente X"}).json()["id"]
     client.patch(f"/projects/{pid}", headers=gestor, json={"active": False})
     r = client.post("/entries", headers=ana, json={"project_id": pid, "work_date": "2026-10-01", "hours": 1})
     assert r.status_code == 422
@@ -110,3 +110,58 @@ def test_primeiro_gestor_vem_do_ambiente(tmp_path, monkeypatch):
         assert r.status_code == 200
         assert r.json()["user"]["role"] == "gestor"
         assert c.get("/health").json() == {"ok": True}
+
+
+def test_projeto_com_cliente_horas_previstas_e_entrega(client):
+    gestor = login(client, "gestor@exemplo.com")
+    ana = login(client, "ana@exemplo.com")
+    body = {"code": "prj-900", "client": "Hospital Z", "budget_hours": 10, "due_date": "2026-12-01"}
+    pid = client.post("/projects", headers=gestor, json=body).json()["id"]
+    client.post("/entries", headers=ana, json={"project_id": pid, "work_date": "2026-10-01", "hours": 4})
+
+    p = next(p for p in client.get("/projects", headers=ana).json() if p["id"] == pid)
+    assert (p["code"], p["client"], p["name"]) == ("PRJ-900", "Hospital Z", "")
+    assert (p["budget_hours"], p["used_hours"], p["due_date"]) == (10, 4, "2026-12-01")
+
+    # Número repetido e campos obrigatórios/invalidos
+    assert client.post("/projects", headers=gestor, json=body).status_code == 409
+    assert client.post("/projects", headers=gestor, json={"code": "X"}).status_code == 422
+    assert client.post("/projects", headers=gestor, json=body | {"code": "Y", "budget_hours": 0}).status_code == 422
+
+
+def test_editar_projeto_so_altera_campos_enviados(client):
+    gestor = login(client, "gestor@exemplo.com")
+    body = {"code": "prj-901", "client": "A", "name": "Desc", "budget_hours": 10, "due_date": "2026-12-01"}
+    pid = client.post("/projects", headers=gestor, json=body).json()["id"]
+
+    assert client.patch(f"/projects/{pid}", headers=gestor, json={"client": "B", "budget_hours": None}).status_code == 200
+    p = next(p for p in client.get("/projects", headers=gestor).json() if p["id"] == pid)
+    assert (p["client"], p["name"], p["budget_hours"], p["due_date"]) == ("B", "Desc", None, "2026-12-01")
+
+
+def test_relatorio_por_projeto_traz_orcamento(client):
+    gestor = login(client, "gestor@exemplo.com")
+    rows = client.get("/reports/by-project", headers=gestor).json()
+    assert {"client", "budget_hours", "due_date", "used_hours", "total_hours", "people"} <= rows[0].keys()
+
+
+def test_banco_antigo_ganha_colunas_novas(tmp_path, monkeypatch):
+    import sqlite3
+
+    from app import db
+
+    if db.database_url():
+        pytest.skip("teste só para SQLite")
+    path = tmp_path / "antigo.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
+    old.execute("INSERT INTO projects (code, name) VALUES ('OLD-1', 'Antigo')")
+    old.commit()
+    old.close()
+
+    monkeypatch.setenv("TIMESHEET_DB", str(path))
+    db.init_db()
+    db.init_db()  # rodar duas vezes não pode falhar
+    with db.connect() as conn:
+        row = dict(conn.execute("SELECT * FROM projects").fetchone())
+    assert row["client"] == "" and row["budget_hours"] is None and row["due_date"] is None

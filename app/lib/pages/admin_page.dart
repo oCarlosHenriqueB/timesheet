@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../models.dart';
 import 'common.dart';
+import 'project_dialog.dart';
+import 'project_status.dart';
 
 /// Cadastro de projetos e usuários (só gestores).
 class AdminPage extends StatefulWidget {
@@ -22,13 +24,17 @@ class _AdminPageState extends State<AdminPage> {
 
   void _reload() => setState(() => data = _load());
 
-  Future<void> _newProject() async {
-    final values = await showDialog<List<String>>(
+  Future<void> _editProject([Project? project]) async {
+    final draft = await showDialog<ProjectDraft>(
       context: context,
-      builder: (_) => const _FormDialog(title: 'Novo projeto', fields: ['Código', 'Nome']),
+      builder: (_) => ProjectDialog(project: project),
     );
-    if (values == null || !mounted) return;
-    await runWithFeedback(context, () => widget.api.createProject(values[0], values[1]), 'Projeto criado.');
+    if (draft == null || !mounted) return;
+    await runWithFeedback(
+      context,
+      () => project == null ? widget.api.createProject(draft) : widget.api.updateProject(project.id, draft),
+      project == null ? 'Projeto criado.' : 'Projeto atualizado.',
+    );
     _reload();
   }
 
@@ -66,16 +72,21 @@ class _AdminPageState extends State<AdminPage> {
           children: [
             Row(children: [
               Expanded(child: Text('Projetos', style: titleStyle)),
-              TextButton.icon(onPressed: _newProject, icon: const Icon(Icons.add), label: const Text('Novo')),
+              TextButton.icon(onPressed: _editProject, icon: const Icon(Icons.add), label: const Text('Novo')),
             ]),
+            const HealthLegend(),
+            const SizedBox(height: 8),
             for (final p in projects)
-              Card(
-                child: SwitchListTile(
-                  title: Text(p.label),
-                  subtitle: Text(p.active ? 'Ativo' : 'Inativo: não aceita novos lançamentos'),
-                  value: p.active,
-                  onChanged: (v) => _toggle(p, v),
-                ),
+              ProjectStatusCard(
+                project: p,
+                onTap: () => _editProject(p),
+                trailing: Column(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () => _editProject(p)),
+                  Tooltip(
+                    message: p.active ? 'Ativo' : 'Inativo',
+                    child: Switch(value: p.active, onChanged: (v) => _toggle(p, v)),
+                  ),
+                ]),
               ),
             const SizedBox(height: 16),
             Row(children: [

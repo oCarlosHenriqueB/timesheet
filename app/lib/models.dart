@@ -19,17 +19,75 @@ class User {
 }
 
 class Project {
-  Project({required this.id, required this.code, required this.name, required this.active});
+  Project({
+    required this.id,
+    required this.code,
+    required this.client,
+    this.description = '',
+    this.active = true,
+    this.budgetHours,
+    this.dueDate,
+    this.usedHours = 0,
+    this.people = 0,
+  });
 
   final int id;
+
+  /// Número do projeto.
   final String code;
-  final String name;
+  final String client;
+  final String description;
   final bool active;
 
-  String get label => '$code · $name';
+  /// Horas previstas; null em projetos antigos ou sem orçamento.
+  final double? budgetHours;
 
-  factory Project.fromJson(Map<String, dynamic> j) =>
-      Project(id: j['id'], code: j['code'], name: j['name'], active: j['active']);
+  /// Data de entrega, opcional.
+  final DateTime? dueDate;
+  final double usedHours;
+  final int people;
+
+  /// Horas previstas menos as lançadas; negativo quando estoura.
+  double? get remainingHours => budgetHours == null ? null : budgetHours! - usedHours;
+
+  String get label => '$code · ${client.isNotEmpty ? client : description}';
+
+  factory Project.fromJson(Map<String, dynamic> j) => Project(
+        id: j['id'],
+        code: j['code'],
+        client: j['client'] ?? '',
+        description: j['name'] ?? '',
+        active: j['active'] ?? true,
+        budgetHours: (j['budget_hours'] as num?)?.toDouble(),
+        dueDate: j['due_date'] == null ? null : DateTime.parse(j['due_date']),
+        usedHours: (j['used_hours'] as num? ?? 0).toDouble(),
+        people: j['people'] ?? 0,
+      );
+}
+
+/// Dados do formulário de projeto, antes de ir para a API.
+class ProjectDraft {
+  ProjectDraft({
+    required this.code,
+    required this.client,
+    this.description = '',
+    this.budgetHours,
+    this.dueDate,
+  });
+
+  final String code;
+  final String client;
+  final String description;
+  final double? budgetHours;
+  final DateTime? dueDate;
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'client': client,
+        'name': description,
+        'budget_hours': budgetHours,
+        'due_date': dueDate?.toIso8601String().substring(0, 10),
+      };
 }
 
 class Entry {

@@ -98,9 +98,33 @@ def _sqlite_connection():
     return conn
 
 
+# Colunas adicionadas depois da v0.1. Bancos antigos ganham as colunas no
+# próximo start; projetos existentes ficam sem horas previstas e sem data.
+# client é texto livre por enquanto; no futuro poderá vir de um cadastro de
+# clientes (ou do SAP) a partir do número do projeto.
+MIGRATIONS = [
+    ("projects", "client", "TEXT NOT NULL DEFAULT ''"),
+    ("projects", "budget_hours", "REAL"),
+    ("projects", "due_date", "TEXT"),
+]
+
+
+def _migrate(conn) -> None:
+    pg = bool(database_url())
+    for table, column, ddl in MIGRATIONS:
+        if pg:
+            ddl = ddl.replace("REAL", "DOUBLE PRECISION")
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+            continue
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(POSTGRES_SCHEMA if database_url() else SQLITE_SCHEMA)
+        _migrate(conn)
 
 
 @contextmanager

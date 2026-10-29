@@ -5,7 +5,7 @@ import 'package:timesheet/pages/entries_page.dart';
 
 void main() {
   testWidgets('EntryDialog valida e devolve o rascunho', (tester) async {
-    final projects = [Project(id: 7, code: 'PRJ-1', name: 'Teste', active: true)];
+    final projects = [Project(id: 7, code: 'PRJ-1', client: 'Cliente Teste')];
     EntryDraft? result;
     await tester.pumpWidget(MaterialApp(
       home: Builder(

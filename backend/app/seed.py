@@ -17,11 +17,12 @@ USERS = [
     ("Carla Técnica", "carla@exemplo.com", "tecnico"),
 ]
 
+# (número, cliente, descrição, horas previstas, dias até a entrega)
 PROJECTS = [
-    ("PRJ-001", "Instalação de compressores - Cliente A"),
-    ("PRJ-002", "Manutenção preventiva - Cliente B"),
-    ("PRJ-003", "Documentação técnica e ART"),
-    ("INT-001", "Treinamento interno"),
+    ("PRJ-001", "Hospital Exemplo A", "Instalação de compressores", 80, 30),
+    ("PRJ-002", "Indústria Exemplo B", "Manutenção preventiva", 20, 5),
+    ("PRJ-003", "Clínica Exemplo C", "Documentação técnica e ART", 40, 15),
+    ("INT-001", "Interno", "Treinamento interno", None, None),
 ]
 
 DESCRIPTIONS = ["Visita técnica", "Montagem", "Relatório", "Calibração", "Reunião com cliente"]
@@ -40,13 +41,17 @@ def run() -> None:
                 "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)",
                 (name, email, hash_password(DEMO_PASSWORD), role),
             )
-        for code, name in PROJECTS:
-            conn.execute("INSERT INTO projects (code, name) VALUES (?, ?)", (code, name))
+        today = dt.date.today()
+        for code, client, name, budget, due_in in PROJECTS:
+            due = (today + dt.timedelta(days=due_in)).isoformat() if due_in is not None else None
+            conn.execute(
+                "INSERT INTO projects (code, client, name, budget_hours, due_date) VALUES (?, ?, ?, ?, ?)",
+                (code, client, name, budget, due),
+            )
 
         rng = random.Random(42)
         tech_ids = [r["id"] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]
         project_ids = [r["id"] for r in conn.execute("SELECT id FROM projects")]
-        today = dt.date.today()
         for days_ago in range(14):
             day = today - dt.timedelta(days=days_ago)
             if day.weekday() >= 5:

@@ -73,12 +73,20 @@ class UserIn(BaseModel):
 
 
 class ProjectIn(BaseModel):
-    code: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    code: str = Field(min_length=1)  # número do projeto
+    client: str = Field(min_length=1)
+    name: str = ""  # descrição, opcional
+    budget_hours: float | None = Field(default=None, gt=0)  # horas previstas
+    due_date: dt.date | None = None  # data de entrega
 
 
 class ProjectPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1)
+    """Só os campos enviados são alterados; budget_hours/due_date = null limpa o valor."""
+
+    client: str | None = Field(default=None, min_length=1)
+    name: str | None = None
+    budget_hours: float | None = Field(default=None, gt=0)
+    due_date: dt.date | None = None
     active: bool | None = None
 
 
@@ -169,14 +177,31 @@ def create_user(body: UserIn, _: dict = Depends(manager)):
 # ---------- projetos ----------
 
 
+# Projeto com as horas já lançadas; o saldo (budget_hours - used_hours) e a
+# cor de alerta são calculados no app.
+PROJECT_SELECT = """
+SELECT p.id, p.code, p.client, p.name, p.active, p.budget_hours, p.due_date,
+       COALESCE(u.used_hours, 0) AS used_hours, COALESCE(u.people, 0) AS people
+FROM projects p
+LEFT JOIN (
+    SELECT project_id, SUM(hours) AS used_hours, COUNT(DISTINCT user_id) AS people
+    FROM entries GROUP BY project_id
+) u ON u.project_id = p.id
+"""
+
+
+def _project_json(r) -> dict:
+    return dict(r) | {"active": bool(r["active"])}
+
+
 @app.get("/projects")
 def list_projects(include_inactive: bool = False, _: dict = Depends(current_user)):
-    sql = "SELECT id, code, name, active FROM projects"
+    sql = PROJECT_SELECT
     if not include_inactive:
-        sql += " WHERE active = 1"
+        sql += " WHERE p.active = 1"
     with connect() as conn:
-        rows = conn.execute(sql + " ORDER BY code").fetchall()
-    return [dict(r) | {"active": bool(r["active"])} for r in rows]
+        rows = conn.execute(sql + " ORDER BY p.code").fetchall()
+    return [_project_json(r) for r in rows]
 
 
 @app.post("/projects", status_code=201)
@@ -184,23 +209,41 @@ def create_project(body: ProjectIn, _: dict = Depends(manager)):
     try:
         with connect() as conn:
             new_id = conn.execute(
-                "INSERT INTO projects (code, name) VALUES (?, ?) RETURNING id",
-                (body.code.strip().upper(), body.name.strip()),
+                """INSERT INTO projects (code, client, name, budget_hours, due_date)
+                   VALUES (?, ?, ?, ?, ?) RETURNING id""",
+                (
+                    body.code.strip().upper(),
+                    body.client.strip(),
+                    body.name.strip(),
+                    body.budget_hours,
+                    body.due_date.isoformat() if body.due_date else None,
+                ),
             ).fetchone()["id"]
     except IntegrityError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um projeto com esse código.")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um projeto com esse número.")
     return {"id": new_id}
 
 
 @app.patch("/projects/{project_id}")
 def update_project(project_id: int, body: ProjectPatch, _: dict = Depends(manager)):
+    changes = {}
+    for field in body.model_fields_set:
+        value = getattr(body, field)
+        if field == "active":
+            if value is not None:
+                changes["active"] = int(value)
+        elif field in ("client", "name"):
+            if value is not None:
+                changes[field] = value.strip()
+        elif field == "due_date":
+            changes["due_date"] = value.isoformat() if value else None
+        else:  # budget_hours
+            changes["budget_hours"] = value
     with connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Projeto não encontrado.")
-        if body.name is not None:
-            conn.execute("UPDATE projects SET name = ? WHERE id = ?", (body.name.strip(), project_id))
-        if body.active is not None:
-            conn.execute("UPDATE projects SET active = ? WHERE id = ?", (int(body.active), project_id))
+        for column, value in changes.items():  # nomes vêm do modelo, não do usuário
+            conn.execute(f"UPDATE projects SET {column} = ? WHERE id = ?", (value, project_id))
     return {"ok": True}
 
 
@@ -279,13 +322,8 @@ def delete_entry(entry_id: int, user: dict = Depends(current_user)):
 @app.get("/reports/by-project")
 def report_by_project(_: dict = Depends(manager)):
     with connect() as conn:
-        rows = conn.execute(
-            """SELECT p.id, p.code, p.name, COALESCE(SUM(e.hours), 0) AS total_hours,
-                      COUNT(DISTINCT e.user_id) AS people
-               FROM projects p LEFT JOIN entries e ON e.project_id = p.id
-               GROUP BY p.id ORDER BY total_hours DESC, p.code"""
-        ).fetchall()
-    return [dict(r) for r in rows]
+        rows = conn.execute(PROJECT_SELECT + " ORDER BY used_hours DESC, p.code").fetchall()
+    return [_project_json(r) | {"total_hours": r["used_hours"]} for r in rows]
 
 
 @app.get("/reports/by-user")

@@ -58,8 +58,13 @@ class Api {
     return data.map((j) => Project.fromJson(j)).toList();
   }
 
-  Future<void> createProject(String code, String name) =>
-      _send('POST', '/projects', {'code': code, 'name': name});
+  Future<void> createProject(ProjectDraft draft) => _send('POST', '/projects', draft.toJson());
+
+  /// Envia todos os campos editáveis (o número do projeto não muda).
+  Future<void> updateProject(int id, ProjectDraft draft) {
+    final body = draft.toJson()..remove('code');
+    return _send('PATCH', '/projects/$id', body);
+  }
 
   Future<void> setProjectActive(int id, bool active) =>
       _send('PATCH', '/projects/$id', {'active': active});
@@ -83,12 +88,9 @@ class Api {
 
   Future<void> deleteEntry(int id) => _send('DELETE', '/entries/$id');
 
-  Future<List<ReportRow>> reportByProject() async {
+  Future<List<Project>> reportByProject() async {
     final data = await _send('GET', '/reports/by-project') as List;
-    return data
-        .map((j) => ReportRow('${j['code']} · ${j['name']}', (j['total_hours'] as num).toDouble(),
-            '${j['people']} pessoa(s)'))
-        .toList();
+    return data.map((j) => Project.fromJson(j)).toList();
   }
 
   Future<List<ReportRow>> reportByUser() async {

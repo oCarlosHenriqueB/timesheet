@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../budget.dart';
 import '../format.dart';
 import '../models.dart';
 import 'common.dart';
+import 'project_status.dart';
 
 /// Totais de horas por projeto e por funcionário (só gestores).
 class ReportsPage extends StatefulWidget {
@@ -16,9 +18,9 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
-  late Future<(List<ReportRow>, List<ReportRow>)> data = _load();
+  late Future<(List<Project>, List<ReportRow>)> data = _load();
 
-  Future<(List<ReportRow>, List<ReportRow>)> _load() async =>
+  Future<(List<Project>, List<ReportRow>)> _load() async =>
       (await widget.api.reportByProject(), await widget.api.reportByUser());
 
   @override
@@ -37,12 +39,39 @@ class _ReportsPageState extends State<ReportsPage> {
                   setState(() => data = _load());
                   await data;
                 },
-                child: TabBarView(children: [_ReportList(rows: result.$1), _ReportList(rows: result.$2)]),
+                child: TabBarView(children: [_ProjectReport(projects: result.$1), _ReportList(rows: result.$2)]),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Projetos mais críticos primeiro: estourados/vencidos, depois perto do limite.
+class _ProjectReport extends StatelessWidget {
+  const _ProjectReport({required this.projects});
+
+  final List<Project> projects;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final sorted = [...projects]..sort((a, b) {
+        final byHealth = projectHealth(b, today).index.compareTo(projectHealth(a, today).index);
+        return byHealth != 0 ? byHealth : b.usedHours.compareTo(a.usedHours);
+      });
+    final total = projects.fold<double>(0, (s, p) => s + p.usedHours);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Total geral: ${formatHours(total)}', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        const HealthLegend(),
+        const SizedBox(height: 8),
+        for (final p in sorted) ProjectStatusCard(project: p),
+      ],
     );
   }
 }
