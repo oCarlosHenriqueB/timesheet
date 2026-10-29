@@ -341,6 +341,90 @@ def delete_entry(entry_id: int, user: dict = Depends(current_user)):
         conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
 
 
+
+# ---------- cronômetro ----------
+
+MAX_TIMER_HOURS = 24
+
+
+def utcnow() -> dt.datetime:
+    """Separado para os testes poderem controlar o relógio."""
+    return dt.datetime.now(dt.UTC)
+
+
+class TimerStart(BaseModel):
+    project_id: int
+    description: str = ""
+
+
+class TimerStop(BaseModel):
+    work_date: dt.date  # dia em que começou, no fuso de quem lançou (o app manda)
+    description: str | None = None  # se vier, substitui a do início
+
+
+def _timer_json(row) -> dict:
+    started = dt.datetime.fromisoformat(row["started_at"])
+    elapsed = int((utcnow() - started).total_seconds())
+    return dict(row) | {"elapsed_seconds": max(elapsed, 0)}
+
+
+@app.get("/timer")
+def get_timer(user: dict = Depends(current_user)):
+    """Cronômetro em andamento do usuário, ou null."""
+    with connect() as conn:
+        row = conn.execute(
+            """SELECT t.project_id, p.code AS project_code, p.client AS project_client, t.started_at, t.description
+               FROM timers t JOIN projects p ON p.id = t.project_id WHERE t.user_id = ?""",
+            (user["id"],),
+        ).fetchone()
+    return _timer_json(row) if row else None
+
+
+@app.post("/timer", status_code=201)
+def start_timer(body: TimerStart, user: dict = Depends(current_user)):
+    with connect() as conn:
+        _check_active_project(conn, body.project_id)
+        if conn.execute("SELECT 1 FROM timers WHERE user_id = ?", (user["id"],)).fetchone():
+            raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um cronômetro rodando. Pare ou descarte antes.")
+        conn.execute(
+            "INSERT INTO timers (user_id, project_id, started_at, description) VALUES (?, ?, ?, ?)",
+            (user["id"], body.project_id, utcnow().isoformat(), body.description.strip()),
+        )
+    return get_timer(user)
+
+
+@app.post("/timer/stop", status_code=201)
+def stop_timer(body: TimerStop, user: dict = Depends(current_user)):
+    """Para o cronômetro e cria o lançamento com as horas decorridas (2 casas decimais)."""
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM timers WHERE user_id = ?", (user["id"],)).fetchone()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Nenhum cronômetro rodando.")
+        seconds = (utcnow() - dt.datetime.fromisoformat(row["started_at"])).total_seconds()
+        if seconds < 60:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Menos de 1 minuto: descarte o cronômetro.")
+        if seconds > MAX_TIMER_HOURS * 3600:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "O cronômetro passou de 24 h (esqueceu ligado?). Descarte e lance as horas à mão.",
+            )
+        _check_active_project(conn, row["project_id"])
+        hours = round(seconds / 3600, 2)
+        description = (body.description if body.description is not None else row["description"]).strip()
+        new_id = conn.execute(
+            """INSERT INTO entries (user_id, project_id, work_date, hours, description)
+               VALUES (?, ?, ?, ?, ?) RETURNING id""",
+            (user["id"], row["project_id"], body.work_date.isoformat(), hours, description),
+        ).fetchone()["id"]
+        conn.execute("DELETE FROM timers WHERE user_id = ?", (user["id"],))
+    return {"id": new_id, "hours": hours}
+
+
+@app.delete("/timer", status_code=204)
+def discard_timer(user: dict = Depends(current_user)):
+    with connect() as conn:
+        conn.execute("DELETE FROM timers WHERE user_id = ?", (user["id"],))
+
 # ---------- relatórios (gestor) ----------
 
 

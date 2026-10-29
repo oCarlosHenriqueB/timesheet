@@ -45,6 +45,15 @@ CREATE TABLE IF NOT EXISTS tokens (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Cronômetro em andamento: no máximo um por usuário. Ao parar, vira um lançamento.
+-- started_at em UTC (ISO 8601), para não depender do fuso do servidor.
+CREATE TABLE IF NOT EXISTS timers (
+    user_id     INTEGER PRIMARY KEY REFERENCES users(id),
+    project_id  INTEGER NOT NULL REFERENCES projects(id),
+    started_at  TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT ''
+);
+
 -- Cópia dos projetos do SAP, importada de um arquivo exportado do SAP.
 -- Enquanto não houver conexão direta, é daqui que vem o "cliente automático".
 CREATE TABLE IF NOT EXISTS sap_catalog (

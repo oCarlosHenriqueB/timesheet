@@ -95,6 +95,26 @@ class Api {
 
   Future<void> deleteEntry(int id) => _send('DELETE', '/entries/$id');
 
+  /// Cronômetro em andamento, ou null.
+  Future<RunningTimer?> timer() async {
+    final data = await _send('GET', '/timer');
+    return data == null ? null : RunningTimer.fromJson(data);
+  }
+
+  Future<RunningTimer> startTimer(int projectId, {String description = ''}) async =>
+      RunningTimer.fromJson(await _send('POST', '/timer', {'project_id': projectId, 'description': description}));
+
+  /// Para o cronômetro e cria o lançamento; devolve as horas lançadas.
+  Future<double> stopTimer(DateTime workDate, {String? description}) async {
+    final data = await _send('POST', '/timer/stop', {
+      'work_date': workDate.toIso8601String().substring(0, 10),
+      'description': ?description,
+    });
+    return (data['hours'] as num).toDouble();
+  }
+
+  Future<void> discardTimer() => _send('DELETE', '/timer');
+
   Future<List<Project>> reportByProject({Period? period}) async {
     final data = await _send('GET', '/reports/by-project${_qs({...?period?.query})}') as List;
     return data.map((j) => Project.fromJson(j)).toList();

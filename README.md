@@ -52,6 +52,18 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 - **Cliente automático:** veja [Integração com SAP](#integração-com-sap-v03): o botão "Buscar no SAP" preenche
   cliente, horas e entrega a partir do número do projeto.
 
+## v0.5: cronômetro
+
+- Em **Minhas horas**, escolha o projeto (e, se quiser, o que vai fazer) e clique em **Iniciar**.
+- O cronômetro fica **guardado no servidor**: continua contando se a página for recarregada, fechada
+  ou aberta em outro aparelho. Cada pessoa tem no máximo um cronômetro rodando.
+- **Parar e lançar** cria o lançamento com o tempo decorrido (horas com 2 casas, ex.: 1h30min20s = 1,51 h),
+  na data em que o cronômetro começou. Dá para editar o lançamento depois, como qualquer outro.
+- **Descartar** (X) apaga o cronômetro sem lançar nada.
+- Regras: menos de 1 minuto não lança (descarte); acima de 24 h também não (provavelmente ficou ligado
+  por engano: descarte e lance à mão); projeto inativo não aceita cronômetro.
+- API: `GET /timer`, `POST /timer`, `POST /timer/stop`, `DELETE /timer`.
+
 ## v0.4: filtro por período
 
 - **Minhas horas** e **Relatórios** têm o seletor de período: *Esta semana* (segunda a domingo), *Este mês*
@@ -234,6 +246,6 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 1. ~~Filtro por período (semana/mês) nos lançamentos e relatórios~~ (feito na v0.4)
 2. ~~Exportar CSV/Excel~~ (feito na v0.3)
 3. Aprovação de horas pelo gestor
-4. Cronômetro por projeto
+4. ~~Cronômetro por projeto~~ (feito na v0.5)
 5. Para uso interno de verdade: expiração de token, troca de senha,
    hospedagem aprovada pela TI e política de dados (LGPD)

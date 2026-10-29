@@ -174,3 +174,46 @@ class ReportRow {
   final double totalHours;
   final String detail;
 }
+
+/// Cronômetro em andamento do usuário (GET /timer).
+class RunningTimer {
+  RunningTimer({
+    required this.projectId,
+    required this.projectLabel,
+    required this.startedAt,
+    required this.description,
+    required int elapsedSeconds,
+    DateTime? fetchedAt,
+  })  : _elapsedAtFetch = Duration(seconds: elapsedSeconds),
+        _fetchedAt = fetchedAt ?? DateTime.now();
+
+  final int projectId;
+  final String projectLabel;
+
+  /// Início em UTC, como o servidor guarda.
+  final DateTime startedAt;
+  final String description;
+  final Duration _elapsedAtFetch;
+  final DateTime _fetchedAt;
+
+  /// Tempo decorrido: o que o servidor informou mais o que passou desde então
+  /// (assim não depende do relógio do aparelho estar certo).
+  Duration elapsed([DateTime? now]) => _elapsedAtFetch + (now ?? DateTime.now()).difference(_fetchedAt);
+
+  /// Dia do lançamento: a data local em que o cronômetro começou.
+  DateTime get workDate {
+    final local = startedAt.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  factory RunningTimer.fromJson(Map<String, dynamic> j) {
+    final client = (j['project_client'] as String?) ?? '';
+    return RunningTimer(
+      projectId: j['project_id'],
+      projectLabel: client.isEmpty ? j['project_code'] : '${j['project_code']} · $client',
+      startedAt: DateTime.parse(j['started_at']),
+      description: j['description'] ?? '',
+      elapsedSeconds: j['elapsed_seconds'] ?? 0,
+    );
+  }
+}

@@ -5,6 +5,7 @@ import '../format.dart';
 import '../models.dart';
 import '../period.dart';
 import 'common.dart';
+import 'timer_card.dart';
 
 /// Lista os lançamentos do usuário logado e permite criar, editar e apagar.
 class EntriesPage extends StatefulWidget {
@@ -65,6 +66,7 @@ class _EntriesPageState extends State<EntriesPage> {
           body: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                   children: [
+                    TimerCard(api: widget.api, projects: projects, onEntryCreated: _reload),
                     PeriodSelector(period: period, onChanged: _setPeriod),
                     if (entries.isEmpty)
                       const Padding(

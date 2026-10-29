@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, entries, projects, users, sap_catalog")
+            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -258,3 +258,72 @@ def test_filtro_por_periodo(client):
     users = {u["name"]: u for u in client.get(f"/reports/by-user?{jan}", headers=gestor).json()}
     assert users["Ana Técnica"]["total_hours"] == 5
     assert users["Bruno Engenheiro"]["total_hours"] == 0  # aparece mesmo sem horas no período
+
+
+# ---------- cronômetro ----------
+
+
+class Clock:
+    """Relógio controlado nos testes do cronômetro."""
+
+    def __init__(self, monkeypatch):
+        import datetime as dt
+
+        from app import main
+
+        self.now = dt.datetime(2026, 10, 29, 12, 0, tzinfo=dt.UTC)
+        monkeypatch.setattr(main, "utcnow", lambda: self.now)
+
+    def advance(self, **kwargs):
+        import datetime as dt
+
+        self.now += dt.timedelta(**kwargs)
+
+
+def test_cronometro_inicia_mostra_e_vira_lancamento(client, monkeypatch):
+    clock = Clock(monkeypatch)
+    ana = login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    assert client.get("/timer", headers=ana).json() is None
+
+    r = client.post("/timer", headers=ana, json={"project_id": pid, "description": "Montagem"})
+    assert r.status_code == 201 and r.json()["elapsed_seconds"] == 0
+    assert client.post("/timer", headers=ana, json={"project_id": pid}).status_code == 409  # só um por vez
+
+    clock.advance(hours=1, minutes=30, seconds=20)
+    t = client.get("/timer", headers=ana).json()
+    assert (t["project_id"], t["description"], t["elapsed_seconds"]) == (pid, "Montagem", 5420)
+
+    r = client.post("/timer/stop", headers=ana, json={"work_date": "2026-10-29"})
+    assert r.status_code == 201 and r.json()["hours"] == 1.51
+    entry = next(e for e in client.get("/entries?all_users=false", headers=ana).json() if e["id"] == r.json()["id"])
+    assert (entry["hours"], entry["work_date"], entry["description"]) == (1.51, "2026-10-29", "Montagem")
+    assert client.get("/timer", headers=ana).json() is None
+
+
+def test_cronometro_de_cada_usuario_e_separado(client, monkeypatch):
+    Clock(monkeypatch)
+    ana, bruno = login(client, "ana@exemplo.com"), login(client, "bruno@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    client.post("/timer", headers=ana, json={"project_id": pid})
+    assert client.get("/timer", headers=bruno).json() is None
+    assert client.post("/timer", headers=bruno, json={"project_id": pid}).status_code == 201
+
+
+def test_cronometro_limites_e_descartar(client, monkeypatch):
+    clock = Clock(monkeypatch)
+    gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    assert client.post("/timer/stop", headers=ana, json={"work_date": "2026-10-29"}).status_code == 404
+
+    client.post("/timer", headers=ana, json={"project_id": pid})
+    clock.advance(seconds=30)
+    assert client.post("/timer/stop", headers=ana, json={"work_date": "2026-10-29"}).status_code == 422  # < 1 min
+    clock.advance(hours=25)
+    assert client.post("/timer/stop", headers=ana, json={"work_date": "2026-10-29"}).status_code == 422  # > 24 h
+    assert client.delete("/timer", headers=ana).status_code == 204
+    assert client.get("/timer", headers=ana).json() is None
+
+    # Projeto inativo: não inicia
+    client.patch(f"/projects/{pid}", headers=gestor, json={"active": False})
+    assert client.post("/timer", headers=ana, json={"project_id": pid}).status_code == 422
