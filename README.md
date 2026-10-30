@@ -3,6 +3,9 @@
 App web para registrar e somar as horas que a equipe de projetos (apertadeiras e automação industrial)
 gasta em cada projeto. Projetistas lançam horas; gestores veem os totais por projeto, atividade e pessoa.
 
+**Manual de uso:** [app/assets/MANUAL.md](app/assets/MANUAL.md). O mesmo arquivo aparece dentro do app, no item
+**Ajuda** do menu (projetistas não veem a parte do gestor). Para mudar o manual, edite esse arquivo.
+
 > Projeto de portfólio. Todos os dados de exemplo são **fictícios**. A ideia é que ele possa
 > virar uma ferramenta interna depois (veja [Próximos passos](#próximos-passos)).
 

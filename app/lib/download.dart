@@ -13,3 +13,6 @@ void downloadFile(Uint8List bytes, String filename, {String type = 'text/csv'}) 
     ..click();
   web.URL.revokeObjectURL(url);
 }
+
+/// Abre [url] numa nova aba.
+void openUrl(String url) => web.window.open(url, '_blank');

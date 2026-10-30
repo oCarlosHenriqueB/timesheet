@@ -4,6 +4,7 @@ import '../api.dart';
 import '../models.dart';
 import '../theme.dart';
 import 'dashboard_screen.dart';
+import 'help_screen.dart';
 import 'history_screen.dart';
 import 'management_screen.dart';
 import 'projects_screen.dart';
@@ -16,7 +17,8 @@ enum AppPage {
   history('Histórico', Icons.history),
   projects('Projetos', Icons.folder_outlined),
   reports('Relatórios', Icons.bar_chart, managerOnly: true),
-  management('Gestão', Icons.admin_panel_settings_outlined, managerOnly: true);
+  management('Gestão', Icons.admin_panel_settings_outlined, managerOnly: true),
+  help('Ajuda', Icons.help_outline);
 
   const AppPage(this.label, this.icon, {this.managerOnly = false});
   final String label;
@@ -60,6 +62,7 @@ class _AppShellState extends State<AppShell> {
       AppPage.projects => ProjectsScreen(api: api, user: user),
       AppPage.reports => ReportsScreen(api: api),
       AppPage.management => ManagementScreen(api: api, user: user),
+      AppPage.help => HelpScreen(user: user),
     };
   }
 
