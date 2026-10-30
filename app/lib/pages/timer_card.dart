@@ -9,14 +9,24 @@ import 'common.dart';
 
 /// Cronômetro por projeto. Fica guardado no servidor, então continua contando
 /// se a página for recarregada ou aberta em outro aparelho.
+/// Não desenha cartão próprio: fica dentro do painel de lançamento.
 class TimerCard extends StatefulWidget {
-  const TimerCard({super.key, required this.api, required this.projects, required this.onEntryCreated});
+  const TimerCard({
+    super.key,
+    required this.api,
+    required this.projects,
+    required this.onEntryCreated,
+    this.onRunningChanged,
+  });
 
   final Api api;
   final List<Project> projects;
 
   /// Chamado depois que o cronômetro vira lançamento, para a lista atualizar.
   final VoidCallback onEntryCreated;
+
+  /// Avisa quando o cronômetro começa ou para (o painel mostra "rodando").
+  final ValueChanged<bool>? onRunningChanged;
 
   @override
   State<TimerCard> createState() => _TimerCardState();
@@ -45,6 +55,7 @@ class _TimerCardState extends State<TimerCard> {
   }
 
   void _setRunning(RunningTimer? t) {
+    if ((running != null) != (t != null)) widget.onRunningChanged?.call(t != null);
     running = t;
     ticker?.cancel();
     if (t != null) ticker = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
@@ -99,13 +110,13 @@ class _TimerCardState extends State<TimerCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const SizedBox.shrink();
+    if (loading) return const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator());
     final scheme = Theme.of(context).colorScheme;
     final t = running;
 
     if (t != null) {
-      return Card(
-        color: scheme.primaryContainer,
+      return Container(
+        decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(children: [
@@ -133,44 +144,39 @@ class _TimerCardState extends State<TimerCard> {
       );
     }
 
-    if (widget.projects.isEmpty) return const SizedBox.shrink();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.end,
-          children: [
-            SizedBox(
-              width: 260,
-              child: DropdownButtonFormField<int>(
-                initialValue: projectId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Cronômetro: projeto'),
-                items: [
-                  for (final p in widget.projects)
-                    DropdownMenuItem(value: p.id, child: Text(p.label, overflow: TextOverflow.ellipsis)),
-                ],
-                onChanged: (v) => setState(() => projectId = v),
-              ),
-            ),
-            SizedBox(
-              width: 220,
-              child: TextField(
-                controller: description,
-                decoration: const InputDecoration(labelText: 'O que vai fazer? (opcional)'),
-                onSubmitted: (_) => busy || projectId == null ? null : _start(),
-              ),
-            ),
-            FilledButton.tonalIcon(
-              onPressed: busy || projectId == null ? null : _start,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Iniciar'),
-            ),
-          ],
+    if (widget.projects.isEmpty) return const Text('Nenhum projeto ativo para cronometrar.');
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      children: [
+        SizedBox(
+          width: 260,
+          child: DropdownButtonFormField<int>(
+            initialValue: projectId,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Projeto'),
+            items: [
+              for (final p in widget.projects)
+                DropdownMenuItem(value: p.id, child: Text(p.label, overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: (v) => setState(() => projectId = v),
+          ),
         ),
-      ),
+        SizedBox(
+          width: 220,
+          child: TextField(
+            controller: description,
+            decoration: const InputDecoration(labelText: 'O que vai fazer? (opcional)'),
+            onSubmitted: (_) => busy || projectId == null ? null : _start(),
+          ),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: busy || projectId == null ? null : _start,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Iniciar'),
+        ),
+      ],
     );
   }
 }

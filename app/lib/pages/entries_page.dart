@@ -5,7 +5,7 @@ import '../format.dart';
 import '../models.dart';
 import '../period.dart';
 import 'common.dart';
-import 'timer_card.dart';
+import 'launch_panel.dart';
 
 /// Lista os lançamentos do usuário logado e permite criar, editar e apagar.
 class EntriesPage extends StatefulWidget {
@@ -58,20 +58,16 @@ class _EntriesPageState extends State<EntriesPage> {
         final (entries, projects) = result;
         final total = entries.fold<double>(0, (s, e) => s + e.hours);
         return Scaffold(
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: projects.isEmpty ? null : () => _edit(projects),
-            icon: const Icon(Icons.add),
-            label: const Text('Lançar horas'),
-          ),
           body: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
-                    TimerCard(api: widget.api, projects: projects, onEntryCreated: _reload),
+                    LaunchPanel(api: widget.api, projects: projects, onEntryCreated: _reload),
+                    const SizedBox(height: 4),
                     PeriodSelector(period: period, onChanged: _setPeriod),
                     if (entries.isEmpty)
                       const Padding(
                         padding: EdgeInsets.only(top: 48),
-                        child: Center(child: Text('Nenhum lançamento neste período. Use "Lançar horas".')),
+                        child: Center(child: Text('Nenhum lançamento neste período.')),
                       )
                     else
                       Text('Total: ${formatHours(total)} em ${entries.length} lançamento(s)',

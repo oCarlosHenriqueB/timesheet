@@ -54,7 +54,12 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 
 ## v0.5: cronômetro
 
-- Em **Minhas horas**, escolha o projeto (e, se quiser, o que vai fazer) e clique em **Iniciar**.
+- O topo de **Minhas horas** tem um painel com dois modos, **Cronômetro** e **Manual**. O app lembra
+  o último modo usado no navegador. O manual (projeto, data, horas, descrição e **Lançar**) fica na
+  própria tela, sem abrir janela. Para editar um lançamento existente, toque nele na lista.
+- No modo Cronômetro, escolha o projeto (e, se quiser, o que vai fazer) e clique em **Iniciar**.
+  Se o cronômetro estiver rodando e você trocar para Manual, ele continua contando
+  (o botão mostra "Cronômetro (rodando)").
 - O cronômetro fica **guardado no servidor**: continua contando se a página for recarregada, fechada
   ou aberta em outro aparelho. Cada pessoa tem no máximo um cronômetro rodando.
 - **Parar e lançar** cria o lançamento com o tempo decorrido (horas com 2 casas, ex.: 1h30min20s = 1,51 h),
