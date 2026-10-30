@@ -55,6 +55,23 @@ class Api {
 
   Future<User> me() async => User.fromJson(await _send('GET', '/me'));
 
+  Future<User> setUseTimer(bool useTimer) async =>
+      User.fromJson(await _send('PATCH', '/me/preferences', {'use_timer': useTimer}));
+
+  Future<List<Activity>> activities({bool includeInactive = false}) async {
+    final data = await _send('GET', '/activities?include_inactive=$includeInactive') as List;
+    return data.map((j) => Activity.fromJson(j)).toList();
+  }
+
+  Future<void> createActivity(String name) => _send('POST', '/activities', {'name': name});
+
+  Future<void> updateActivity(int id, {String? name, bool? active}) =>
+      _send('PATCH', '/activities/$id', {'name': ?name, 'active': ?active});
+
+  /// [today] é a data local de quem usa (a semana vai de segunda a domingo).
+  Future<DashboardData> dashboard(DateTime today) async => DashboardData.fromJson(
+      await _send('GET', '/dashboard?today=${today.toIso8601String().substring(0, 10)}'));
+
   Future<List<Project>> projects({bool includeInactive = false}) async {
     final data = await _send('GET', '/projects?include_inactive=$includeInactive') as List;
     return data.map((j) => Project.fromJson(j)).toList();
@@ -83,8 +100,22 @@ class Api {
   static String _qs(Map<String, String> params) =>
       params.isEmpty ? '' : '?${Uri(queryParameters: params).query}';
 
-  Future<List<Entry>> entries({bool allUsers = false, Period? period}) async {
-    final params = {'all_users': '$allUsers', ...?period?.query};
+  Future<List<Entry>> entries({
+    bool allUsers = false,
+    Period? period,
+    int? projectId,
+    int? activityId,
+    EntryStatus? status,
+    int? userId,
+  }) async {
+    final params = {
+      'all_users': '$allUsers',
+      ...?period?.query,
+      if (projectId != null) 'project_id': '$projectId',
+      if (activityId != null) 'activity_id': '$activityId',
+      if (status != null) 'status': status.name,
+      if (userId != null) 'user_id': '$userId',
+    };
     final data = await _send('GET', '/entries${_qs(params)}') as List;
     return data.map((j) => Entry.fromJson(j)).toList();
   }
@@ -101,13 +132,17 @@ class Api {
     return data == null ? null : RunningTimer.fromJson(data);
   }
 
-  Future<RunningTimer> startTimer(int projectId, {String description = ''}) async =>
-      RunningTimer.fromJson(await _send('POST', '/timer', {'project_id': projectId, 'description': description}));
+  Future<RunningTimer> startTimer(int projectId, {int? activityId, String description = ''}) async =>
+      RunningTimer.fromJson(await _send(
+          'POST', '/timer', {'project_id': projectId, 'activity_id': activityId, 'description': description}));
 
   /// Para o cronômetro e cria o lançamento; devolve as horas lançadas.
-  Future<double> stopTimer(DateTime workDate, {String? description}) async {
+  /// [startTime]/[endTime] ("HH:MM" locais) só aparecem no histórico.
+  Future<double> stopTimer(DateTime workDate, {String? startTime, String? endTime, String? description}) async {
     final data = await _send('POST', '/timer/stop', {
       'work_date': workDate.toIso8601String().substring(0, 10),
+      'start_time': ?startTime,
+      'end_time': ?endTime,
       'description': ?description,
     });
     return (data['hours'] as num).toDouble();
@@ -147,6 +182,14 @@ class Api {
     }
     if (res.statusCode >= 400) throw ApiException('Erro ${res.statusCode} ao exportar.', res.statusCode);
     return res.bodyBytes;
+  }
+
+  Future<List<ReportRow>> reportByActivity({Period? period}) async {
+    final data = await _send('GET', '/reports/by-activity${_qs({...?period?.query})}') as List;
+    return data
+        .map((j) => ReportRow(j['name'] as String, (j['total_hours'] as num).toDouble(),
+            '${j['projects']} projeto(s)'))
+        .toList();
   }
 
   Future<List<ReportRow>> reportByUser({Period? period}) async {

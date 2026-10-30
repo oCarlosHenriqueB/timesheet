@@ -5,10 +5,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import sap
 from .db import IntegrityError, connect, init_db
@@ -96,11 +96,42 @@ class ProjectPatch(BaseModel):
     active: bool | None = None
 
 
+TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # HH:MM, 24 h
+STATUSES = ("rascunho", "enviado", "aprovado", "rejeitado")
+
+
+def minutes(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
 class EntryIn(BaseModel):
+    """Apontamento. Com início e fim, as horas são calculadas (fim − início − intervalo);
+    sem horários, vale o campo hours (lançamentos antigos e integrações)."""
+
     project_id: int
+    activity_id: int | None = None
     work_date: dt.date
-    hours: float = Field(gt=0, le=24)
+    start_time: str | None = Field(default=None, pattern=TIME_PATTERN)
+    end_time: str | None = Field(default=None, pattern=TIME_PATTERN)
+    break_minutes: int = Field(default=0, ge=0, le=12 * 60)
+    hours: float | None = Field(default=None, gt=0, le=24)
     description: str = ""
+
+    @model_validator(mode="after")
+    def _resolve_hours(self):
+        if (self.start_time is None) != (self.end_time is None):
+            raise ValueError("Informe início e fim, ou nenhum dos dois.")
+        if self.start_time and self.end_time:
+            worked = minutes(self.end_time) - minutes(self.start_time) - self.break_minutes
+            if minutes(self.end_time) <= minutes(self.start_time):
+                raise ValueError("O fim precisa ser depois do início (no mesmo dia).")
+            if worked <= 0:
+                raise ValueError("O intervalo é maior que o período trabalhado.")
+            self.hours = round(worked / 60, 2)
+        elif self.hours is None:
+            raise ValueError("Informe início e fim, ou o total de horas.")
+        return self
 
 
 # ---------- autenticação ----------
@@ -112,14 +143,14 @@ def current_user(authorization: str = Header(default="")) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Faça login.")
     with connect() as conn:
         row = conn.execute(
-            """SELECT u.id, u.name, u.email, u.role FROM tokens t
+            """SELECT u.id, u.name, u.email, u.role, u.use_timer FROM tokens t
                JOIN users u ON u.id = t.user_id
                WHERE t.token = ? AND u.active = 1""",
             (token,),
         ).fetchone()
     if row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão inválida.")
-    return dict(row)
+    return dict(row) | {"use_timer": bool(row["use_timer"])}
 
 
 def manager(user: dict = Depends(current_user)) -> dict:
@@ -139,7 +170,7 @@ def login(body: LoginIn):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "E-mail ou senha incorretos.")
         token = new_token()
         conn.execute("INSERT INTO tokens (token, user_id) VALUES (?, ?)", (token, row["id"]))
-    user = {k: row[k] for k in ("id", "name", "email", "role")}
+    user = {k: row[k] for k in ("id", "name", "email", "role")} | {"use_timer": bool(row["use_timer"])}
     return {"token": token, "user": user}
 
 
@@ -153,6 +184,67 @@ def logout(authorization: str = Header(default="")):
 @app.get("/me")
 def me(user: dict = Depends(current_user)):
     return user
+
+
+class PreferencesIn(BaseModel):
+    use_timer: bool
+
+
+@app.patch("/me/preferences")
+def update_preferences(body: PreferencesIn, user: dict = Depends(current_user)):
+    """Preferências de cada pessoa. Por enquanto: usar ou não o cronômetro."""
+    with connect() as conn:
+        conn.execute("UPDATE users SET use_timer = ? WHERE id = ?", (int(body.use_timer), user["id"]))
+    return user | {"use_timer": body.use_timer}
+
+
+# ---------- atividades ----------
+
+
+class ActivityIn(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class ActivityPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    active: bool | None = None
+
+
+@app.get("/activities")
+def list_activities(include_inactive: bool = False, _: dict = Depends(current_user)):
+    sql = "SELECT id, name, active FROM activities"
+    if not include_inactive:
+        sql += " WHERE active = 1"
+    with connect() as conn:
+        rows = conn.execute(sql + " ORDER BY name").fetchall()
+    return [dict(r) | {"active": bool(r["active"])} for r in rows]
+
+
+@app.post("/activities", status_code=201)
+def create_activity(body: ActivityIn, _: dict = Depends(manager)):
+    try:
+        with connect() as conn:
+            new_id = conn.execute(
+                "INSERT INTO activities (name) VALUES (?) RETURNING id", (body.name.strip(),)
+            ).fetchone()["id"]
+    except IntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma atividade com esse nome.")
+    return {"id": new_id}
+
+
+@app.patch("/activities/{activity_id}")
+def update_activity(activity_id: int, body: ActivityPatch, _: dict = Depends(manager)):
+    try:
+        with connect() as conn:
+            if conn.execute("SELECT 1 FROM activities WHERE id = ?", (activity_id,)).fetchone() is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Atividade não encontrada.")
+            if body.name is not None:
+                conn.execute("UPDATE activities SET name = ? WHERE id = ?", (body.name.strip(), activity_id))
+            if body.active is not None:
+                conn.execute("UPDATE activities SET active = ? WHERE id = ?", (int(body.active), activity_id))
+    except IntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma atividade com esse nome.")
+    return {"ok": True}
 
 
 # ---------- usuários (gestor) ----------
@@ -259,10 +351,12 @@ def update_project(project_id: int, body: ProjectPatch, _: dict = Depends(manage
 
 ENTRY_SELECT = """
 SELECT e.id, e.user_id, u.name AS user_name, e.project_id, p.code AS project_code,
-       p.name AS project_name, e.work_date, e.hours, e.description
+       p.name AS project_name, p.client AS project_client, e.activity_id, a.name AS activity_name,
+       e.work_date, e.start_time, e.end_time, e.break_minutes, e.hours, e.description, e.status
 FROM entries e
 JOIN users u ON u.id = e.user_id
 JOIN projects p ON p.id = e.project_id
+LEFT JOIN activities a ON a.id = e.activity_id
 """
 
 
@@ -272,12 +366,25 @@ def _check_active_project(conn, project_id: int) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Projeto inexistente ou inativo.")
 
 
+def _check_activity(conn, activity_id: int | None) -> None:
+    if activity_id is None:
+        return
+    row = conn.execute("SELECT active FROM activities WHERE id = ?", (activity_id,)).fetchone()
+    if row is None or not row["active"]:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Atividade inexistente ou inativa.")
+
+
 def _own_entry(conn, entry_id: int, user: dict):
-    row = conn.execute("SELECT user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    """Só o dono (ou o gestor) mexe; apontamento aprovado fica travado para o técnico."""
+    row = conn.execute("SELECT user_id, status FROM entries WHERE id = ?", (entry_id,)).fetchone()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Lançamento não encontrado.")
-    if row["user_id"] != user["id"] and user["role"] != "gestor":
+    if user["role"] == "gestor":
+        return
+    if row["user_id"] != user["id"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Esse lançamento não é seu.")
+    if row["status"] == "aprovado":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Apontamento aprovado não pode ser alterado.")
 
 
 def period_filter(column: str, date_from: dt.date | None, date_to: dt.date | None) -> tuple[str, list]:
@@ -297,29 +404,59 @@ def list_entries(
     all_users: bool = False,
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
+    project_id: int | None = None,
+    activity_id: int | None = None,
+    status_: Literal[STATUSES] | None = Query(default=None, alias="status"),
+    user_id: int | None = None,
     user: dict = Depends(current_user),
 ):
-    """Técnico vê só os próprios lançamentos; gestor pode pedir os de todos. Período opcional."""
+    """Técnico vê só os próprios lançamentos; gestor pode pedir os de todos (ou de uma pessoa).
+    Filtros opcionais: período, projeto, atividade e status."""
     where, params = period_filter("e.work_date", date_from, date_to)
-    if not (all_users and user["role"] == "gestor"):
+    if user["role"] == "gestor" and (all_users or user_id is not None):
+        if user_id is not None:
+            where += " AND e.user_id = ?"
+            params.append(user_id)
+    else:
         where += " AND e.user_id = ?"
         params.append(user["id"])
+    for column, value in (("e.project_id", project_id), ("e.activity_id", activity_id), ("e.status", status_)):
+        if value is not None:
+            where += f" AND {column} = ?"
+            params.append(value)
     with connect() as conn:
         rows = conn.execute(
-            ENTRY_SELECT + " WHERE 1 = 1" + where + " ORDER BY e.work_date DESC, e.id DESC", tuple(params)
+            ENTRY_SELECT + " WHERE 1 = 1" + where + " ORDER BY e.work_date DESC, e.start_time DESC, e.id DESC",
+            tuple(params),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _entry_values(body: EntryIn) -> tuple:
+    return (
+        body.project_id,
+        body.activity_id,
+        body.work_date.isoformat(),
+        body.start_time,
+        body.end_time,
+        body.break_minutes if body.start_time else 0,
+        body.hours,
+        body.description.strip(),
+    )
 
 
 @app.post("/entries", status_code=201)
 def create_entry(body: EntryIn, user: dict = Depends(current_user)):
     with connect() as conn:
         _check_active_project(conn, body.project_id)
+        _check_activity(conn, body.activity_id)
         new_id = conn.execute(
-            "INSERT INTO entries (user_id, project_id, work_date, hours, description) VALUES (?, ?, ?, ?, ?) RETURNING id",
-            (user["id"], body.project_id, body.work_date.isoformat(), body.hours, body.description.strip()),
+            """INSERT INTO entries (project_id, activity_id, work_date, start_time, end_time, break_minutes,
+                                    hours, description, user_id, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado') RETURNING id""",
+            (*_entry_values(body), user["id"]),
         ).fetchone()["id"]
-    return {"id": new_id}
+    return {"id": new_id, "hours": body.hours}
 
 
 @app.put("/entries/{entry_id}")
@@ -327,11 +464,14 @@ def update_entry(entry_id: int, body: EntryIn, user: dict = Depends(current_user
     with connect() as conn:
         _own_entry(conn, entry_id, user)
         _check_active_project(conn, body.project_id)
+        _check_activity(conn, body.activity_id)
         conn.execute(
-            "UPDATE entries SET project_id = ?, work_date = ?, hours = ?, description = ? WHERE id = ?",
-            (body.project_id, body.work_date.isoformat(), body.hours, body.description.strip(), entry_id),
+            """UPDATE entries SET project_id = ?, activity_id = ?, work_date = ?, start_time = ?, end_time = ?,
+                                  break_minutes = ?, hours = ?, description = ?
+               WHERE id = ?""",
+            (*_entry_values(body), entry_id),
         )
-    return {"ok": True}
+    return {"ok": True, "hours": body.hours}
 
 
 @app.delete("/entries/{entry_id}", status_code=204)
@@ -354,11 +494,15 @@ def utcnow() -> dt.datetime:
 
 class TimerStart(BaseModel):
     project_id: int
+    activity_id: int | None = None
     description: str = ""
 
 
 class TimerStop(BaseModel):
     work_date: dt.date  # dia em que começou, no fuso de quem lançou (o app manda)
+    # Horário local de início e fim, só para mostrar no histórico; as horas vêm do tempo decorrido.
+    start_time: str | None = Field(default=None, pattern=TIME_PATTERN)
+    end_time: str | None = Field(default=None, pattern=TIME_PATTERN)
     description: str | None = None  # se vier, substitui a do início
 
 
@@ -373,8 +517,11 @@ def get_timer(user: dict = Depends(current_user)):
     """Cronômetro em andamento do usuário, ou null."""
     with connect() as conn:
         row = conn.execute(
-            """SELECT t.project_id, p.code AS project_code, p.client AS project_client, t.started_at, t.description
-               FROM timers t JOIN projects p ON p.id = t.project_id WHERE t.user_id = ?""",
+            """SELECT t.project_id, p.code AS project_code, p.client AS project_client, t.activity_id,
+                      a.name AS activity_name, t.started_at, t.description
+               FROM timers t JOIN projects p ON p.id = t.project_id
+               LEFT JOIN activities a ON a.id = t.activity_id
+               WHERE t.user_id = ?""",
             (user["id"],),
         ).fetchone()
     return _timer_json(row) if row else None
@@ -384,11 +531,12 @@ def get_timer(user: dict = Depends(current_user)):
 def start_timer(body: TimerStart, user: dict = Depends(current_user)):
     with connect() as conn:
         _check_active_project(conn, body.project_id)
+        _check_activity(conn, body.activity_id)
         if conn.execute("SELECT 1 FROM timers WHERE user_id = ?", (user["id"],)).fetchone():
             raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um cronômetro rodando. Pare ou descarte antes.")
         conn.execute(
-            "INSERT INTO timers (user_id, project_id, started_at, description) VALUES (?, ?, ?, ?)",
-            (user["id"], body.project_id, utcnow().isoformat(), body.description.strip()),
+            "INSERT INTO timers (user_id, project_id, activity_id, started_at, description) VALUES (?, ?, ?, ?, ?)",
+            (user["id"], body.project_id, body.activity_id, utcnow().isoformat(), body.description.strip()),
         )
     return get_timer(user)
 
@@ -412,9 +560,19 @@ def stop_timer(body: TimerStop, user: dict = Depends(current_user)):
         hours = round(seconds / 3600, 2)
         description = (body.description if body.description is not None else row["description"]).strip()
         new_id = conn.execute(
-            """INSERT INTO entries (user_id, project_id, work_date, hours, description)
-               VALUES (?, ?, ?, ?, ?) RETURNING id""",
-            (user["id"], row["project_id"], body.work_date.isoformat(), hours, description),
+            """INSERT INTO entries (user_id, project_id, activity_id, work_date, start_time, end_time,
+                                    hours, description, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'enviado') RETURNING id""",
+            (
+                user["id"],
+                row["project_id"],
+                row["activity_id"],
+                body.work_date.isoformat(),
+                body.start_time,
+                body.end_time,
+                hours,
+                description,
+            ),
         ).fetchone()["id"]
         conn.execute("DELETE FROM timers WHERE user_id = ?", (user["id"],))
     return {"id": new_id, "hours": hours}
@@ -425,7 +583,79 @@ def discard_timer(user: dict = Depends(current_user)):
     with connect() as conn:
         conn.execute("DELETE FROM timers WHERE user_id = ?", (user["id"],))
 
+# ---------- dashboard ----------
+
+
+@app.get("/dashboard")
+def dashboard(today: dt.date | None = None, user: dict = Depends(current_user)):
+    """Resumo para a tela inicial. `today` vem do app (data local de quem usa)."""
+    today = today or utcnow().date()
+    monday = today - dt.timedelta(days=today.weekday())
+    week = [monday + dt.timedelta(days=i) for i in range(7)]
+    with connect() as conn:
+        per_day = {
+            r["work_date"]: r["hours"]
+            for r in conn.execute(
+                """SELECT work_date, SUM(hours) AS hours FROM entries
+                   WHERE user_id = ? AND work_date >= ? AND work_date <= ? GROUP BY work_date""",
+                (user["id"], week[0].isoformat(), week[-1].isoformat()),
+            )
+        }
+        month_hours = conn.execute(
+            "SELECT COALESCE(SUM(hours), 0) AS h FROM entries WHERE user_id = ? AND work_date >= ? AND work_date <= ?",
+            (user["id"], today.replace(day=1).isoformat(), today.isoformat()),
+        ).fetchone()["h"]
+        # Projetos em andamento: ativos e com lançamento nos últimos 30 dias (meus; do time, para o gestor).
+        since = (today - dt.timedelta(days=30)).isoformat()
+        mine = "" if user["role"] == "gestor" else " AND user_id = ?"
+        params = (since,) if user["role"] == "gestor" else (since, user["id"])
+        projects = conn.execute(
+            f"""SELECT x.* FROM ({PROJECT_SELECT}) x
+                WHERE x.active = 1 AND x.id IN (SELECT project_id FROM entries WHERE work_date >= ?{mine})
+                ORDER BY x.code""",
+            params,
+        ).fetchall()
+        recent = conn.execute(
+            ENTRY_SELECT + " WHERE e.user_id = ? ORDER BY e.work_date DESC, e.start_time DESC, e.id DESC LIMIT 6",
+            (user["id"],),
+        ).fetchall()
+        team_week = None
+        if user["role"] == "gestor":
+            team_week = conn.execute(
+                "SELECT COALESCE(SUM(hours), 0) AS h FROM entries WHERE work_date >= ? AND work_date <= ?",
+                (week[0].isoformat(), week[-1].isoformat()),
+            ).fetchone()["h"]
+    week_days = [{"date": d.isoformat(), "hours": per_day.get(d.isoformat(), 0)} for d in week]
+    return {
+        "today": today.isoformat(),
+        "today_hours": per_day.get(today.isoformat(), 0),
+        "week_hours": sum(d["hours"] for d in week_days),
+        "month_hours": month_hours,
+        "week_days": week_days,
+        "projects_in_progress": [_project_json(r) for r in projects],
+        "recent_entries": [dict(r) for r in recent],
+        "team_week_hours": team_week,
+    }
+
+
 # ---------- relatórios (gestor) ----------
+
+
+@app.get("/reports/by-activity")
+def report_by_activity(
+    date_from: dt.date | None = None, date_to: dt.date | None = None, _: dict = Depends(manager)
+):
+    where, params = period_filter("e.work_date", date_from, date_to)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""SELECT COALESCE(a.name, 'Sem atividade') AS name, SUM(e.hours) AS total_hours,
+                       COUNT(DISTINCT e.project_id) AS projects
+                FROM entries e LEFT JOIN activities a ON a.id = e.activity_id
+                WHERE 1 = 1{where}
+                GROUP BY COALESCE(a.name, 'Sem atividade') ORDER BY total_hours DESC""",
+            tuple(params),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/reports/by-project")
@@ -500,9 +730,11 @@ def sap_catalog_template(_: dict = Depends(manager)):
 @app.get("/exports/entries.csv")
 def export_entries(date_from: dt.date | None = None, date_to: dt.date | None = None, _: dict = Depends(manager)):
     """Lançamentos do período em CSV, num layout próximo ao do apontamento de horas do SAP (CATS)."""
-    sql = """SELECT e.work_date, e.hours, e.description, p.code AS project_code, p.client,
+    sql = """SELECT e.work_date, e.hours, e.description, e.start_time, e.end_time, e.break_minutes, e.status,
+                    a.name AS activity_name, p.code AS project_code, p.client,
                     p.sap_wbs, p.sap_sales_order, u.name AS user_name, u.email AS user_email
              FROM entries e JOIN users u ON u.id = e.user_id JOIN projects p ON p.id = e.project_id
+             LEFT JOIN activities a ON a.id = e.activity_id
              WHERE 1 = 1"""
     where, params = period_filter("e.work_date", date_from, date_to)
     sql += where

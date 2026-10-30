@@ -128,7 +128,8 @@ def import_catalog(conn, rows: list[dict]) -> int:
 
 
 EXPORT_COLUMNS = [
-    "data", "projeto", "pep", "ordem_venda", "cliente", "funcionario", "email", "horas", "descricao",
+    "data", "projeto", "pep", "ordem_venda", "cliente", "funcionario", "email", "atividade",
+    "inicio", "fim", "intervalo_min", "horas", "status", "descricao",
 ]
 
 
@@ -151,7 +152,12 @@ def export_entries_csv(rows: list[dict]) -> str:
             r["client"],
             r["user_name"],
             r["user_email"],
+            r["activity_name"] or "",
+            r["start_time"] or "",
+            r["end_time"] or "",
+            r["break_minutes"] if r["start_time"] else "",
             f"{r['hours']:.2f}".replace(".", ","),
+            r["status"],
             r["description"],
         ])
     return out.getvalue()

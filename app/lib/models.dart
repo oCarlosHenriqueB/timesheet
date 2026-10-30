@@ -1,5 +1,12 @@
 class User {
-  User({required this.id, required this.name, required this.email, required this.role, this.active = true});
+  User({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.role,
+    this.active = true,
+    this.useTimer = true,
+  });
 
   final int id;
   final String name;
@@ -7,7 +14,14 @@ class User {
   final String role;
   final bool active;
 
+  /// Preferência de cada pessoa: mostrar ou não o cronômetro no apontamento.
+  final bool useTimer;
+
   bool get isManager => role == 'gestor';
+  String get roleLabel => isManager ? 'Gestor' : 'Técnico';
+
+  User copyWith({bool? useTimer}) =>
+      User(id: id, name: name, email: email, role: role, active: active, useTimer: useTimer ?? this.useTimer);
 
   factory User.fromJson(Map<String, dynamic> j) => User(
         id: j['id'],
@@ -15,7 +29,34 @@ class User {
         email: j['email'],
         role: j['role'],
         active: j['active'] ?? true,
+        useTimer: j['use_timer'] ?? true,
       );
+}
+
+/// Tipo de atividade do apontamento (Instalação, Calibração...).
+class Activity {
+  Activity({required this.id, required this.name, this.active = true});
+
+  final int id;
+  final String name;
+  final bool active;
+
+  factory Activity.fromJson(Map<String, dynamic> j) =>
+      Activity(id: j['id'], name: j['name'], active: j['active'] ?? true);
+}
+
+/// Situação do apontamento. Nesta versão tudo nasce "enviado"; a aprovação vem na fase gerencial.
+enum EntryStatus {
+  rascunho('Rascunho'),
+  enviado('Enviado'),
+  aprovado('Aprovado'),
+  rejeitado('Rejeitado');
+
+  const EntryStatus(this.label);
+  final String label;
+
+  static EntryStatus parse(String? value) =>
+      EntryStatus.values.where((s) => s.name == value).firstOrNull ?? EntryStatus.enviado;
 }
 
 class Project {
@@ -125,44 +166,90 @@ class Entry {
     required this.id,
     required this.userName,
     required this.projectId,
-    required this.projectLabel,
+    required this.projectCode,
+    required this.projectClient,
     required this.date,
     required this.hours,
-    required this.description,
+    this.activityId,
+    this.activityName,
+    this.startTime,
+    this.endTime,
+    this.breakMinutes = 0,
+    this.description = '',
+    this.status = EntryStatus.enviado,
+    this.projectName = '',
   });
 
   final int id;
   final String userName;
   final int projectId;
-  final String projectLabel;
+  final String projectCode;
+  final String projectClient;
+  final String projectName;
+  final int? activityId;
+  final String? activityName;
   final DateTime date;
+
+  /// "08:00"; nulos em lançamentos antigos (só total de horas).
+  final String? startTime;
+  final String? endTime;
+  final int breakMinutes;
   final double hours;
   final String description;
+  final EntryStatus status;
+
+  String get projectLabel => '$projectCode · ${projectClient.isNotEmpty ? projectClient : projectName}';
+  String get timeRange => startTime == null ? '—' : '$startTime – $endTime';
+  bool get locked => status == EntryStatus.aprovado;
 
   factory Entry.fromJson(Map<String, dynamic> j) => Entry(
         id: j['id'],
         userName: j['user_name'],
         projectId: j['project_id'],
-        projectLabel: '${j['project_code']} · ${j['project_name']}',
+        projectCode: j['project_code'],
+        projectClient: j['project_client'] ?? '',
+        projectName: j['project_name'] ?? '',
+        activityId: j['activity_id'],
+        activityName: j['activity_name'],
         date: DateTime.parse(j['work_date']),
+        startTime: j['start_time'],
+        endTime: j['end_time'],
+        breakMinutes: j['break_minutes'] ?? 0,
         hours: (j['hours'] as num).toDouble(),
         description: j['description'] ?? '',
+        status: EntryStatus.parse(j['status']),
       );
 }
 
-/// Dados do formulário de lançamento, antes de ir para a API.
+/// Dados do formulário de apontamento, antes de ir para a API.
+/// Com início e fim, a API calcula as horas; sem eles, vale [hours].
 class EntryDraft {
-  EntryDraft({required this.projectId, required this.date, required this.hours, this.description = ''});
+  EntryDraft({
+    required this.projectId,
+    required this.date,
+    this.activityId,
+    this.startTime,
+    this.endTime,
+    this.breakMinutes = 0,
+    this.hours,
+    this.description = '',
+  });
 
   final int projectId;
+  final int? activityId;
   final DateTime date;
-  final double hours;
+  final String? startTime;
+  final String? endTime;
+  final int breakMinutes;
+  final double? hours;
   final String description;
 
   Map<String, dynamic> toJson() => {
         'project_id': projectId,
+        'activity_id': activityId,
         'work_date': date.toIso8601String().substring(0, 10),
-        'hours': hours,
+        if (startTime != null) ...{'start_time': startTime, 'end_time': endTime, 'break_minutes': breakMinutes},
+        if (startTime == null) 'hours': hours,
         'description': description,
       };
 }
@@ -180,6 +267,7 @@ class RunningTimer {
   RunningTimer({
     required this.projectId,
     required this.projectLabel,
+    this.activityName,
     required this.startedAt,
     required this.description,
     required int elapsedSeconds,
@@ -189,6 +277,7 @@ class RunningTimer {
 
   final int projectId;
   final String projectLabel;
+  final String? activityName;
 
   /// Início em UTC, como o servidor guarda.
   final DateTime startedAt;
@@ -211,9 +300,47 @@ class RunningTimer {
     return RunningTimer(
       projectId: j['project_id'],
       projectLabel: client.isEmpty ? j['project_code'] : '${j['project_code']} · $client',
+      activityName: j['activity_name'],
       startedAt: DateTime.parse(j['started_at']),
       description: j['description'] ?? '',
       elapsedSeconds: j['elapsed_seconds'] ?? 0,
     );
   }
+}
+
+/// Resumo da tela inicial (GET /dashboard).
+class DashboardData {
+  DashboardData({
+    required this.todayHours,
+    required this.weekHours,
+    required this.monthHours,
+    required this.weekDays,
+    required this.projects,
+    required this.recent,
+    this.teamWeekHours,
+  });
+
+  final double todayHours;
+  final double weekHours;
+  final double monthHours;
+
+  /// Segunda a domingo da semana atual.
+  final List<(DateTime, double)> weekDays;
+  final List<Project> projects;
+  final List<Entry> recent;
+
+  /// Só para o gestor.
+  final double? teamWeekHours;
+
+  factory DashboardData.fromJson(Map<String, dynamic> j) => DashboardData(
+        todayHours: (j['today_hours'] as num).toDouble(),
+        weekHours: (j['week_hours'] as num).toDouble(),
+        monthHours: (j['month_hours'] as num).toDouble(),
+        weekDays: [
+          for (final d in j['week_days'] as List) (DateTime.parse(d['date']), (d['hours'] as num).toDouble()),
+        ],
+        projects: [for (final p in j['projects_in_progress'] as List) Project.fromJson(p)],
+        recent: [for (final e in j['recent_entries'] as List) Entry.fromJson(e)],
+        teamWeekHours: (j['team_week_hours'] as num?)?.toDouble(),
+      );
 }

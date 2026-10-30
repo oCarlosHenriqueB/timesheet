@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timesheet/models.dart';
-import 'package:timesheet/pages/project_dialog.dart';
+import 'package:timesheet/dialogs/project_dialog.dart';
 
 void main() {
   testWidgets('novo projeto exige número e cliente; horas previstas aceitam vírgula', (tester) async {

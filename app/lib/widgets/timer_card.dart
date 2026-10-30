@@ -15,12 +15,14 @@ class TimerCard extends StatefulWidget {
     super.key,
     required this.api,
     required this.projects,
+    this.activities = const [],
     required this.onEntryCreated,
     this.onRunningChanged,
   });
 
   final Api api;
   final List<Project> projects;
+  final List<Activity> activities;
 
   /// Chamado depois que o cronômetro vira lançamento, para a lista atualizar.
   final VoidCallback onEntryCreated;
@@ -37,6 +39,7 @@ class _TimerCardState extends State<TimerCard> {
   bool loading = true;
   bool busy = false;
   int? projectId;
+  int? activityId;
   final description = TextEditingController();
   Timer? ticker;
 
@@ -84,14 +87,23 @@ class _TimerCardState extends State<TimerCard> {
   }
 
   Future<void> _start() => _run(() async {
-        final t = await widget.api.startTimer(projectId!, description: description.text.trim());
+        final t = await widget.api.startTimer(projectId!,
+            activityId: activityId, description: description.text.trim());
         description.clear();
         setState(() => _setRunning(t));
       });
 
   Future<void> _stop() => _run(() async {
         final t = running!;
-        final hours = await widget.api.stopTimer(t.workDate);
+        // Início e fim locais, para o histórico; se passou da meia-noite, fica só o total.
+        final startLocal = t.startedAt.toLocal();
+        final now = DateTime.now();
+        final sameDay = DateUtils.isSameDay(startLocal, now);
+        final hours = await widget.api.stopTimer(
+          t.workDate,
+          startTime: sameDay ? clockTime(startLocal) : null,
+          endTime: sameDay ? clockTime(now) : null,
+        );
         setState(() => _setRunning(null));
         if (mounted) {
           ScaffoldMessenger.of(context)
@@ -128,7 +140,7 @@ class _TimerCardState extends State<TimerCard> {
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontFeatures: const [
                       FontFeature.tabularFigures(),
                     ])),
-                Text(t.projectLabel, overflow: TextOverflow.ellipsis),
+                Text([t.projectLabel, ?t.activityName].join(' · '), overflow: TextOverflow.ellipsis),
                 if (t.description.isNotEmpty) Text(t.description, style: Theme.of(context).textTheme.bodySmall),
               ]),
             ),
@@ -163,6 +175,17 @@ class _TimerCardState extends State<TimerCard> {
             onChanged: (v) => setState(() => projectId = v),
           ),
         ),
+        if (widget.activities.isNotEmpty)
+          SizedBox(
+            width: 200,
+            child: DropdownButtonFormField<int>(
+              initialValue: activityId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Atividade'),
+              items: [for (final a in widget.activities) DropdownMenuItem(value: a.id, child: Text(a.name))],
+              onChanged: (v) => setState(() => activityId = v),
+            ),
+          ),
         SizedBox(
           width: 220,
           child: TextField(

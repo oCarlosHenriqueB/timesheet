@@ -60,15 +60,23 @@ def run() -> None:
         rng = random.Random(42)
         tech_ids = [r["id"] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]
         project_ids = [r["id"] for r in conn.execute("SELECT id FROM projects")]
+        activity_ids = [r["id"] for r in conn.execute("SELECT id FROM activities WHERE name <> 'Outros'")]
         for days_ago in range(14):
             day = today - dt.timedelta(days=days_ago)
             if day.weekday() >= 5:
                 continue
             for uid in tech_ids:
-                conn.execute(
-                    "INSERT INTO entries (user_id, project_id, work_date, hours, description) VALUES (?, ?, ?, ?, ?)",
-                    (uid, rng.choice(project_ids), day.isoformat(), rng.choice([2, 4, 6, 8]), rng.choice(DESCRIPTIONS)),
-                )
+                # Manhã (08:00 a 12:00) e, em alguns dias, tarde com intervalo de 15 min.
+                blocks = [("08:00", "12:00", 0)] + ([("13:00", "17:15", 15)] if rng.random() < 0.6 else [])
+                for start, end, pause in blocks:
+                    h = (int(end[:2]) * 60 + int(end[3:]) - int(start[:2]) * 60 - int(start[3:]) - pause) / 60
+                    conn.execute(
+                        """INSERT INTO entries (user_id, project_id, activity_id, work_date, start_time, end_time,
+                                                break_minutes, hours, description)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (uid, rng.choice(project_ids), rng.choice(activity_ids), day.isoformat(),
+                         start, end, pause, h, rng.choice(DESCRIPTIONS)),
+                    )
     print(f"Dados de demonstração criados. Senha de todos: {DEMO_PASSWORD}")
 
 

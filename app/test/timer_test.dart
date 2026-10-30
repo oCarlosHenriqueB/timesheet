@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:timesheet/api.dart';
 import 'package:timesheet/format.dart';
 import 'package:timesheet/models.dart';
-import 'package:timesheet/pages/timer_card.dart';
+import 'package:timesheet/widgets/timer_card.dart';
 
 /// API em memória: só o que o cartão do cronômetro usa.
 class FakeApi extends Api {
@@ -15,7 +15,8 @@ class FakeApi extends Api {
   Future<RunningTimer?> timer() async => current;
 
   @override
-  Future<RunningTimer> startTimer(int projectId, {String description = ''}) async => current = RunningTimer(
+  Future<RunningTimer> startTimer(int projectId, {int? activityId, String description = ''}) async =>
+      current = RunningTimer(
         projectId: projectId,
         projectLabel: 'PRJ-$projectId · Cliente',
         startedAt: DateTime.now().toUtc(),
@@ -24,7 +25,7 @@ class FakeApi extends Api {
       );
 
   @override
-  Future<double> stopTimer(DateTime workDate, {String? description}) async {
+  Future<double> stopTimer(DateTime workDate, {String? startTime, String? endTime, String? description}) async {
     stops.add(workDate);
     current = null;
     return 1.5;

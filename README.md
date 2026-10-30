@@ -17,6 +17,32 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 | Acesso | Login com e-mail e senha; sem aprovação de horas |
 | Uso | Portfólio agora, pensado para uso interno depois |
 
+## v0.6: interface corporativa (protótipo para o gestor)
+
+Interface pensada para desktop, com menu lateral fixo e visual em azul, branco e cinza.
+O logo oficial da empresa não é usado: há um espaço reservado para ele, até haver autorização.
+
+| Tela | O que tem |
+|---|---|
+| **Login** | Painel institucional à esquerda e formulário à direita |
+| **Dashboard** | Horas hoje, na semana e no mês; projetos em andamento; gráfico da semana; atividades recentes. O gestor também vê as horas da equipe na semana |
+| **Apontamento** | Projeto, **atividade**, data, **início, fim e intervalo**, e o total calculado na hora. O próximo apontamento já começa onde o anterior terminou, e Enter registra. Mostra o que foi lançado hoje. O **cronômetro é opcional por pessoa**: liga ou desliga no menu da conta, no canto inferior esquerdo |
+| **Histórico** | Tabela com filtros por **período, projeto e status**. O gestor escolhe: meus apontamentos, toda a equipe ou uma pessoa. Dá para editar e apagar |
+| **Projetos** | Tabela com código, cliente, status, horas estimadas e realizadas, saldo e entrega, com busca e filtro de ativos/inativos. O gestor cria, edita, ativa/desativa e importa o catálogo do SAP |
+| **Relatórios** (gestor) | Horas por **projeto, atividade e funcionário** no período, com gráfico de barras, tabela e exportação CSV |
+| **Gestão** (gestor) | Acompanhamento da equipe na semana, usuários e **atividades** (criar, renomear, desativar). Espaço reservado para a aprovação de horas |
+
+**Status do apontamento:** Rascunho, Enviado, Aprovado e Rejeitado. Nesta versão tudo nasce como
+"Enviado" e o filtro já funciona. Apontamento aprovado fica travado para o técnico. A aprovação pelo
+gestor é a próxima fase.
+
+**Atividades padrão** (editáveis em Gestão): Instalação, Manutenção, Calibração, Documentação técnica,
+Deslocamento, Treinamento, Reunião, Outros.
+
+**Lançamentos antigos** (de antes da v0.6) continuam lá, sem atividade e sem horários. Ao editar, aparecem
+pelo total de horas. O fim precisa ser no mesmo dia do início: um turno que passa da meia-noite é
+registrado em dois apontamentos.
+
 ## MVP (v0.1)
 
 - Login com e-mail e senha, dois papéis: **técnico** e **gestor**
@@ -132,12 +158,29 @@ Rotas (só gestor): `GET /sap/projects/{numero}`, `POST /sap/catalog`, `GET /exp
 
 ```
 timesheet/
-├── backend/          API FastAPI + SQLite
-│   ├── app/          main.py (rotas), db.py, security.py, seed.py
+├── backend/                 API FastAPI (regras de negócio)
+│   ├── app/
+│   │   ├── main.py          rotas: login, projetos, apontamentos, cronômetro, dashboard, relatórios
+│   │   ├── db.py            esquema, migrações automáticas, SQLite/Postgres
+│   │   ├── sap.py           integração SAP (catálogo e exportação)
+│   │   ├── security.py      senhas e tokens
+│   │   └── seed.py          dados fictícios
 │   └── tests/
-└── app/              Flutter Web
-    └── lib/          main.dart, api.dart, models.dart, pages/
+├── app/                     Flutter Web (interface; só conversa com a API)
+│   └── lib/
+│       ├── main.dart        sessão (login/logout) e tema
+│       ├── theme.dart       cores e estilo corporativo
+│       ├── api.dart         todas as chamadas HTTP
+│       ├── models.dart      dados (Projeto, Apontamento, Atividade, Dashboard...)
+│       ├── format.dart, period.dart, budget.dart   regras de exibição (horas, datas, cores)
+│       ├── screens/         uma tela por arquivo + shell.dart (menu lateral)
+│       ├── widgets/         componentes reutilizáveis (cartões, tabela, gráficos, formulário de apontamento, cronômetro)
+│       └── dialogs/         janelas (editar apontamento, projeto, catálogo SAP)
+└── docs/                    exemplos (catálogo SAP fictício)
 ```
+
+A interface não tem regra de negócio: cálculo de horas válido, permissões, travas de status e saldos são
+decididos na API. O app só calcula o total para mostrar na tela enquanto a pessoa digita.
 
 ## Como rodar localmente
 
@@ -242,15 +285,18 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 | GET | `/projects` | logado |
 | POST / PATCH | `/projects`, `/projects/{id}` | gestor |
 | GET / POST | `/users` | gestor |
-| GET / POST | `/entries` (`?all_users=true` para gestor) | logado |
+| GET / POST | `/entries` (filtros: `date_from`, `date_to`, `project_id`, `activity_id`, `status`; gestor: `all_users`, `user_id`) | logado |
 | PUT / DELETE | `/entries/{id}` | dono ou gestor |
-| GET | `/reports/by-project`, `/reports/by-user` | gestor |
+| GET | `/reports/by-project`, `/reports/by-activity`, `/reports/by-user` | gestor |
+| GET | `/dashboard?today=aaaa-mm-dd` | logado |
+| GET / POST / PATCH | `/activities`, `/activities/{id}` | leitura: logado; alteração: gestor |
+| PATCH | `/me/preferences` (`use_timer`) | logado |
 
 ## Próximos passos
 
 1. ~~Filtro por período (semana/mês) nos lançamentos e relatórios~~ (feito na v0.4)
 2. ~~Exportar CSV/Excel~~ (feito na v0.3)
-3. Aprovação de horas pelo gestor
+3. Aprovação de horas pelo gestor (a estrutura de status já existe; falta a tela em Gestão)
 4. ~~Cronômetro por projeto~~ (feito na v0.5)
 5. Para uso interno de verdade: expiração de token, troca de senha,
    hospedagem aprovada pela TI e política de dados (LGPD)

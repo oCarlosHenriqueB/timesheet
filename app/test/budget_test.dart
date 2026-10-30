@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timesheet/budget.dart';
 import 'package:timesheet/models.dart';
-import 'package:timesheet/pages/project_status.dart';
+import 'package:timesheet/widgets/project_status.dart';
 
 Project p({double? budget, double used = 0, DateTime? due}) =>
     Project(id: 1, code: 'P', client: 'C', budgetHours: budget, usedHours: used, dueDate: due);

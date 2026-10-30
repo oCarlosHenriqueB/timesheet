@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog")
+            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog, activities")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -228,8 +228,12 @@ def test_exporta_horas_csv_por_periodo(client):
     r = client.get("/exports/entries.csv?date_from=2020-01-01&date_to=2020-01-31", headers=gestor)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
     lines = r.content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "data;projeto;pep;ordem_venda;cliente;funcionario;email;horas;descricao"
-    assert lines[1:] == ['15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Técnica;ana@exemplo.com;2,50;Visita']
+    assert lines[0] == (
+        "data;projeto;pep;ordem_venda;cliente;funcionario;email;atividade;inicio;fim;intervalo_min;horas;status;descricao"
+    )
+    assert lines[1:] == [
+        '15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Técnica;ana@exemplo.com;;;;;2,50;enviado;Visita'
+    ]
     assert client.get("/exports/entries.csv", headers=ana).status_code == 403
 
 
@@ -327,3 +331,142 @@ def test_cronometro_limites_e_descartar(client, monkeypatch):
     # Projeto inativo: não inicia
     client.patch(f"/projects/{pid}", headers=gestor, json={"active": False})
     assert client.post("/timer", headers=ana, json={"project_id": pid}).status_code == 422
+
+
+
+# ---------- v0.6: apontamento com atividade, horários e status ----------
+
+
+def activity_id(client, headers, name="Instalação"):
+    return next(a["id"] for a in client.get("/activities", headers=headers).json() if a["name"] == name)
+
+
+def test_atividades_padrao_e_gestao(client):
+    gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
+    names = [a["name"] for a in client.get("/activities", headers=ana).json()]
+    assert {"Instalação", "Calibração", "Documentação técnica", "Outros"} <= set(names)
+
+    assert client.post("/activities", headers=ana, json={"name": "X"}).status_code == 403
+    new = client.post("/activities", headers=gestor, json={"name": "Comissionamento"}).json()["id"]
+    assert client.post("/activities", headers=gestor, json={"name": "Comissionamento"}).status_code == 409
+    client.patch(f"/activities/{new}", headers=gestor, json={"active": False})
+    assert "Comissionamento" not in [a["name"] for a in client.get("/activities", headers=ana).json()]
+    all_ = client.get("/activities?include_inactive=true", headers=gestor).json()
+    assert any(a["name"] == "Comissionamento" and not a["active"] for a in all_)
+
+
+def test_apontamento_com_inicio_fim_e_intervalo(client):
+    ana = login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    aid = activity_id(client, ana)
+    body = {"project_id": pid, "activity_id": aid, "work_date": "2026-10-29",
+            "start_time": "08:00", "end_time": "12:30", "break_minutes": 15, "description": "Montagem"}
+    r = client.post("/entries", headers=ana, json=body)
+    assert r.status_code == 201 and r.json()["hours"] == 4.25
+    e = next(e for e in client.get("/entries", headers=ana).json() if e["id"] == r.json()["id"])
+    assert (e["start_time"], e["end_time"], e["break_minutes"], e["hours"]) == ("08:00", "12:30", 15, 4.25)
+    assert (e["activity_name"], e["status"], e["project_client"]) == ("Instalação", "enviado", e["project_client"])
+
+    bad = [
+        body | {"end_time": "07:00"},  # fim antes do início
+        body | {"break_minutes": 300},  # intervalo maior que o período
+        body | {"end_time": None},  # só um dos horários
+        body | {"start_time": "8:00"},  # formato
+        body | {"start_time": "24:00"},
+        {k: v for k, v in body.items() if k not in ("start_time", "end_time")},  # sem horários e sem horas
+    ]
+    for b in bad:
+        assert client.post("/entries", headers=ana, json=b).status_code == 422, b
+    # Sem horários, vale o total de horas (lançamentos antigos / integrações)
+    legacy = {"project_id": pid, "work_date": "2026-10-29", "hours": 2}
+    assert client.post("/entries", headers=ana, json=legacy).status_code == 201
+
+
+def test_filtros_do_historico(client):
+    gestor, ana, bruno = (login(client, e) for e in ("gestor@exemplo.com", "ana@exemplo.com", "bruno@exemplo.com"))
+    p1 = client.post("/projects", headers=gestor, json={"code": "HIS-1", "client": "A"}).json()["id"]
+    p2 = client.post("/projects", headers=gestor, json={"code": "HIS-2", "client": "B"}).json()["id"]
+    cal = activity_id(client, ana, "Calibração")
+    base = {"work_date": "2019-05-10", "start_time": "08:00", "end_time": "09:00"}
+    client.post("/entries", headers=ana, json=base | {"project_id": p1, "activity_id": cal})
+    client.post("/entries", headers=ana, json=base | {"project_id": p2})
+    client.post("/entries", headers=bruno, json=base | {"project_id": p1})
+    q = "date_from=2019-05-01&date_to=2019-05-31"
+
+    assert len(client.get(f"/entries?{q}", headers=ana).json()) == 2
+    assert len(client.get(f"/entries?{q}&project_id={p1}", headers=ana).json()) == 1
+    assert len(client.get(f"/entries?{q}&activity_id={cal}", headers=ana).json()) == 1
+    assert len(client.get(f"/entries?{q}&status=enviado", headers=ana).json()) == 2
+    assert client.get(f"/entries?{q}&status=aprovado", headers=ana).json() == []
+    assert client.get(f"/entries?{q}&status=xyz", headers=ana).status_code == 422
+    # Gestor: todos, ou de uma pessoa; técnico não consegue ver de outro com user_id
+    assert len(client.get(f"/entries?{q}&all_users=true", headers=gestor).json()) == 3
+    bruno_id = client.get("/me", headers=bruno).json()["id"]
+    assert len(client.get(f"/entries?{q}&user_id={bruno_id}", headers=gestor).json()) == 1
+    assert len(client.get(f"/entries?{q}&user_id={bruno_id}", headers=ana).json()) == 2  # ignora: só os dela
+
+
+def test_apontamento_aprovado_fica_travado(client):
+    from app.db import connect
+
+    ana = login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    body = {"project_id": pid, "work_date": "2026-10-29", "hours": 1}
+    eid = client.post("/entries", headers=ana, json=body).json()["id"]
+    with connect() as conn:  # aprovação ainda não tem tela; simula direto no banco
+        conn.execute("UPDATE entries SET status = 'aprovado' WHERE id = ?", (eid,))
+    assert client.put(f"/entries/{eid}", headers=ana, json=body).status_code == 409
+    assert client.delete(f"/entries/{eid}", headers=ana).status_code == 409
+
+
+def test_preferencia_do_cronometro_por_pessoa(client):
+    ana, bruno = login(client, "ana@exemplo.com"), login(client, "bruno@exemplo.com")
+    assert client.get("/me", headers=ana).json()["use_timer"] is True
+    assert client.patch("/me/preferences", headers=ana, json={"use_timer": False}).json()["use_timer"] is False
+    assert client.get("/me", headers=ana).json()["use_timer"] is False
+    assert client.get("/me", headers=bruno).json()["use_timer"] is True
+    r = client.post("/auth/login", json={"email": "ana@exemplo.com", "password": "demo123"})
+    assert r.json()["user"]["use_timer"] is False
+
+
+def test_cronometro_guarda_atividade_e_horarios(client, monkeypatch):
+    clock = Clock(monkeypatch)
+    ana = login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    aid = activity_id(client, ana, "Manutenção")
+    t = client.post("/timer", headers=ana, json={"project_id": pid, "activity_id": aid}).json()
+    assert t["activity_name"] == "Manutenção"
+    clock.advance(minutes=45)
+    eid = client.post("/timer/stop", headers=ana,
+                      json={"work_date": "2026-10-29", "start_time": "09:00", "end_time": "09:45"}).json()["id"]
+    e = next(e for e in client.get("/entries", headers=ana).json() if e["id"] == eid)
+    assert (e["activity_name"], e["start_time"], e["end_time"], e["hours"]) == ("Manutenção", "09:00", "09:45", 0.75)
+
+
+def test_dashboard(client):
+    gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
+    pid = client.post("/projects", headers=gestor, json={"code": "DSH-1", "client": "C", "budget_hours": 10}).json()["id"]
+    for day, start, end in (("2030-01-07", "08:00", "10:00"), ("2030-01-09", "08:00", "11:30"), ("2030-01-14", "08:00", "09:00")):
+        client.post("/entries", headers=ana, json={"project_id": pid, "work_date": day, "start_time": start, "end_time": end})
+
+    d = client.get("/dashboard?today=2030-01-09", headers=ana).json()  # quarta-feira
+    assert d["today_hours"] == 3.5
+    assert d["week_hours"] == 5.5  # segunda 07 a domingo 13
+    assert [x["date"] for x in d["week_days"]][0] == "2030-01-07" and len(d["week_days"]) == 7
+    assert d["month_hours"] == 5.5  # até "hoje"
+    assert "DSH-1" in [p["code"] for p in d["projects_in_progress"]]
+    assert d["recent_entries"][0]["work_date"] == "2030-01-14"
+    assert d["team_week_hours"] is None
+    assert client.get("/dashboard?today=2030-01-09", headers=gestor).json()["team_week_hours"] == 5.5
+
+
+def test_relatorio_por_atividade(client):
+    gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    cal = activity_id(client, ana, "Calibração")
+    client.post("/entries", headers=ana, json={"project_id": pid, "activity_id": cal, "work_date": "2018-03-01", "hours": 3})
+    client.post("/entries", headers=ana, json={"project_id": pid, "work_date": "2018-03-02", "hours": 1})
+    rows = {r["name"]: r["total_hours"] for r in client.get(
+        "/reports/by-activity?date_from=2018-03-01&date_to=2018-03-31", headers=gestor).json()}
+    assert rows == {"Calibração": 3, "Sem atividade": 1}
+    assert client.get("/reports/by-activity", headers=ana).status_code == 403

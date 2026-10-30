@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS timers (
     description TEXT NOT NULL DEFAULT ''
 );
 
+-- Tipos de atividade do apontamento (instalação, calibração...). O gestor edita a lista.
+CREATE TABLE IF NOT EXISTS activities (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    name   TEXT NOT NULL UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1
+);
+
 -- Cópia dos projetos do SAP, importada de um arquivo exportado do SAP.
 -- Enquanto não houver conexão direta, é daqui que vem o "cliente automático".
 CREATE TABLE IF NOT EXISTS sap_catalog (
@@ -130,6 +137,27 @@ MIGRATIONS = [
     # Referências para casar o projeto com o SAP (elemento PEP/WBS e ordem de venda).
     ("projects", "sap_wbs", "TEXT NOT NULL DEFAULT ''"),
     ("projects", "sap_sales_order", "TEXT NOT NULL DEFAULT ''"),
+    # v0.6: apontamento com atividade, início/fim/intervalo e status (prepara a aprovação).
+    # Lançamentos antigos ficam sem atividade e sem horários, com status "enviado".
+    ("entries", "activity_id", "INTEGER"),
+    ("entries", "start_time", "TEXT"),
+    ("entries", "end_time", "TEXT"),
+    ("entries", "break_minutes", "INTEGER NOT NULL DEFAULT 0"),
+    ("entries", "status", "TEXT NOT NULL DEFAULT 'enviado'"),
+    ("timers", "activity_id", "INTEGER"),
+    # Cada pessoa escolhe se usa o cronômetro.
+    ("users", "use_timer", "INTEGER NOT NULL DEFAULT 1"),
+]
+
+DEFAULT_ACTIVITIES = [
+    "Instalação",
+    "Manutenção",
+    "Calibração",
+    "Documentação técnica",
+    "Deslocamento",
+    "Treinamento",
+    "Reunião",
+    "Outros",
 ]
 
 
@@ -149,6 +177,9 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(POSTGRES_SCHEMA if database_url() else SQLITE_SCHEMA)
         _migrate(conn)
+        if not conn.execute("SELECT COUNT(*) AS n FROM activities").fetchone()["n"]:
+            for name in DEFAULT_ACTIVITIES:
+                conn.execute("INSERT INTO activities (name) VALUES (?)", (name,))
 
 
 @contextmanager
