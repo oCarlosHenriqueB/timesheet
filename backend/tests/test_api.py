@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog, activities, app_meta")
+            conn.execute("DROP TABLE IF EXISTS tokens, timers, project_members, entries, projects, users, sap_catalog, activities, app_meta")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -496,3 +496,90 @@ def test_lista_de_atividades_v2_entra_uma_vez_sem_apagar(tmp_path, monkeypatch):
     with db.connect() as conn:
         names = {r["name"] for r in conn.execute("SELECT name FROM activities")}
     assert "Projeto mecânico" not in names and "Projeto mecânico (CAD)" in names
+
+
+# ---------- alocação de projetistas e grade da equipe ----------
+
+
+def ids(client, gestor):
+    return {u["name"]: u["id"] for u in client.get("/users", headers=gestor).json()}
+
+
+def test_alocacao_restringe_quem_aponta(client, monkeypatch):
+    Clock(monkeypatch)
+    gestor, ana, bruno = (login(client, e) for e in ("gestor@exemplo.com", "ana@exemplo.com", "bruno@exemplo.com"))
+    u = ids(client, gestor)
+    pid = client.post("/projects", headers=gestor, json={"code": "ALO-1", "client": "Montadora X"}).json()["id"]
+    entry = {"project_id": pid, "work_date": "2026-10-29", "start_time": "08:00", "end_time": "09:00"}
+
+    # Sem equipe: aberto a todos
+    assert client.post("/entries", headers=bruno, json=entry).status_code == 201
+    assert pid in [p["id"] for p in client.get("/projects", headers=bruno).json()]
+
+    r = client.put(f"/projects/{pid}/members", headers=gestor, json=[
+        {"user_id": u["Ana Souza"], "budget_hours": 40, "due_date": "2026-11-15"},
+    ])
+    assert r.status_code == 200 and r.json()[0]["budget_hours"] == 40
+    assert client.put(f"/projects/{pid}/members", headers=ana, json=[]).status_code == 403
+
+    # Só a Ana vê e aponta; o Bruno não, nem por cronômetro; o gestor pode
+    assert pid in [p["id"] for p in client.get("/projects", headers=ana).json()]
+    assert pid not in [p["id"] for p in client.get("/projects", headers=bruno).json()]
+    assert client.post("/entries", headers=ana, json=entry).status_code == 201
+    assert client.post("/entries", headers=bruno, json=entry).status_code == 403
+    assert client.post("/timer", headers=bruno, json={"project_id": pid}).status_code == 403
+    assert client.post("/entries", headers=gestor, json=entry).status_code == 201
+
+    # Lançamento antigo do Bruno nesse projeto continua editável (sem trocar de projeto)
+    old = next(e for e in client.get("/entries", headers=bruno).json() if e["project_id"] == pid)
+    assert client.put(f"/entries/{old['id']}", headers=bruno, json=entry | {"end_time": "10:00"}).status_code == 200
+    # ...mas ninguém de fora move lançamento para dentro do projeto
+    other = client.get("/projects", headers=bruno).json()[0]["id"]
+    eid = client.post("/entries", headers=bruno, json=entry | {"project_id": other}).json()["id"]
+    assert client.put(f"/entries/{eid}", headers=bruno, json=entry).status_code == 403
+
+    members = client.get(f"/projects/{pid}/members", headers=gestor).json()
+    assert members[0]["used_hours"] == 1 and members[0]["due_date"] == "2026-11-15"
+    # Lista vazia reabre o projeto
+    client.put(f"/projects/{pid}/members", headers=gestor, json=[])
+    assert pid in [p["id"] for p in client.get("/projects", headers=bruno).json()]
+
+
+def test_alocacao_validacoes(client):
+    gestor = login(client, "gestor@exemplo.com")
+    u = ids(client, gestor)
+    pid = client.post("/projects", headers=gestor, json={"code": "ALO-2", "client": "C"}).json()["id"]
+    dup = [{"user_id": u["Ana Souza"]}, {"user_id": u["Ana Souza"]}]
+    assert client.put(f"/projects/{pid}/members", headers=gestor, json=dup).status_code == 422
+    assert client.put(f"/projects/{pid}/members", headers=gestor, json=[{"user_id": 9999}]).status_code == 422
+    assert client.put(f"/projects/{pid}/members", headers=gestor, json=[{"user_id": u["Ana Souza"], "budget_hours": 0}]).status_code == 422
+    assert client.put("/projects/9999/members", headers=gestor, json=[]).status_code == 404
+
+
+def test_grade_da_equipe(client):
+    gestor, ana, bruno = (login(client, e) for e in ("gestor@exemplo.com", "ana@exemplo.com", "bruno@exemplo.com"))
+    u = ids(client, gestor)
+    pid = client.post("/projects", headers=gestor, json={"code": "GRD-1", "client": "Montadora Y", "due_date": "2031-03-31"}).json()["id"]
+    client.put(f"/projects/{pid}/members", headers=gestor, json=[
+        {"user_id": u["Ana Souza"], "budget_hours": 10, "due_date": "2031-03-10"},
+        {"user_id": u["Carla Mendes"], "budget_hours": 5},
+    ])
+    for day, end in (("2031-02-27", "10:00"), ("2031-03-02", "12:00"), ("2031-03-03", "09:00")):
+        client.post("/entries", headers=ana, json={"project_id": pid, "work_date": day, "start_time": "08:00", "end_time": end})
+    client.post("/entries", headers=gestor, json={"project_id": pid, "work_date": "2031-03-02", "hours": 3})
+
+    r = client.get("/reports/team-grid?date_from=2031-03-02&date_to=2031-03-08", headers=gestor).json()
+    assert r["days"][0] == "2031-03-02" and len(r["days"]) == 7
+    rows = {(x["user_name"], x["project_code"]): x for x in r["rows"] if x["project_code"] == "GRD-1"}
+    ana_row = rows[("Ana Souza", "GRD-1")]
+    assert ana_row["allocated"] and ana_row["budget_hours"] == 10 and ana_row["due_date"] == "2031-03-10"
+    assert ana_row["hours_before"] == 2 and ana_row["total_hours"] == 7
+    assert ana_row["days"] == {"2031-03-02": 4, "2031-03-03": 1}
+    carla = rows[("Carla Mendes", "GRD-1")]  # alocada sem horas: aparece, prazo do projeto
+    assert carla["days"] == {} and carla["due_date"] == "2031-03-31"
+    gestora = rows[("Marina Costa", "GRD-1")]  # apontou sem estar alocada: aparece como não alocada
+    assert not gestora["allocated"] and gestora["days"] == {"2031-03-02": 3}
+
+    assert client.get("/reports/team-grid?date_from=2031-03-02&date_to=2031-03-08", headers=bruno).status_code == 403
+    assert client.get("/reports/team-grid?date_from=2031-03-08&date_to=2031-03-01", headers=gestor).status_code == 422
+    assert client.get("/reports/team-grid?date_from=2031-01-01&date_to=2031-04-30", headers=gestor).status_code == 422

@@ -85,6 +85,19 @@ class Api {
     return _send('PATCH', '/projects/$id', body);
   }
 
+  Future<List<Member>> members(int projectId) async {
+    final data = await _send('GET', '/projects/$projectId/members') as List;
+    return data.map((j) => Member.fromJson(j)).toList();
+  }
+
+  /// Substitui a equipe do projeto; lista vazia = aberto a todos.
+  Future<void> saveMembers(int projectId, List<Member> members) =>
+      _send('PUT', '/projects/$projectId/members', [for (final m in members) m.toJson()]);
+
+  /// Grade colaborador × projeto × dia (gestor).
+  Future<TeamGrid> teamGrid(Period period) async =>
+      TeamGrid.fromJson(await _send('GET', '/reports/team-grid${_qs(period.query)}'));
+
   Future<void> setProjectActive(int id, bool active) =>
       _send('PATCH', '/projects/$id', {'active': active});
 

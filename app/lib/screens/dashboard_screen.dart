@@ -10,6 +10,7 @@ import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/layout.dart';
 import '../widgets/project_status.dart';
+import '../widgets/team_grid.dart';
 import 'shell.dart';
 
 /// Tela inicial: horas do dia, da semana e do mês, projetos em andamento e atividades recentes.
@@ -90,6 +91,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ]),
           );
         }),
+        if (widget.user.isManager) ...[
+          const SizedBox(height: 16),
+          TeamGridCard(
+            api: widget.api,
+            actions: [
+              TextButton(onPressed: () => widget.onNavigate(AppPage.management), child: const Text('Abrir em Gestão')),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         SectionCard(
           title: 'Atividades recentes',

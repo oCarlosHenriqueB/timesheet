@@ -293,13 +293,65 @@ def _project_json(r) -> dict:
 
 
 @app.get("/projects")
-def list_projects(include_inactive: bool = False, _: dict = Depends(current_user)):
-    sql = PROJECT_SELECT
+def list_projects(include_inactive: bool = False, user: dict = Depends(current_user)):
+    """Gestor vê todos. Projetista vê os projetos em que está alocado e os que não têm ninguém alocado."""
+    sql = f"""SELECT x.*, COALESCE(m.members, 0) AS members
+              FROM ({PROJECT_SELECT}) x
+              LEFT JOIN (SELECT project_id, COUNT(*) AS members FROM project_members GROUP BY project_id) m
+                     ON m.project_id = x.id
+              WHERE 1 = 1"""
+    params: list = []
     if not include_inactive:
-        sql += " WHERE p.active = 1"
+        sql += " AND x.active = 1"
+    if user["role"] != "gestor":
+        sql += " AND (COALESCE(m.members, 0) = 0 OR x.id IN (SELECT project_id FROM project_members WHERE user_id = ?))"
+        params.append(user["id"])
     with connect() as conn:
-        rows = conn.execute(sql + " ORDER BY p.code").fetchall()
+        rows = conn.execute(sql + " ORDER BY x.code", tuple(params)).fetchall()
     return [_project_json(r) for r in rows]
+
+
+# ---------- alocação de projetistas (gestor) ----------
+
+
+class MemberIn(BaseModel):
+    user_id: int
+    budget_hours: float | None = Field(default=None, gt=0)  # horas previstas para essa pessoa
+    due_date: dt.date | None = None  # vazio = entrega do projeto
+
+
+@app.get("/projects/{project_id}/members")
+def list_members(project_id: int, _: dict = Depends(manager)):
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT m.user_id, u.name AS user_name, m.budget_hours, m.due_date,
+                      COALESCE((SELECT SUM(e.hours) FROM entries e
+                                WHERE e.project_id = m.project_id AND e.user_id = m.user_id), 0) AS used_hours
+               FROM project_members m JOIN users u ON u.id = m.user_id
+               WHERE m.project_id = ? ORDER BY u.name""",
+            (project_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.put("/projects/{project_id}/members")
+def replace_members(project_id: int, body: list[MemberIn], _: dict = Depends(manager)):
+    """Define a equipe do projeto (substitui a lista). Lista vazia = projeto aberto a todos."""
+    if len({m.user_id for m in body}) != len(body):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Projetista repetido na lista.")
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Projeto não encontrado.")
+        for m in body:
+            if conn.execute("SELECT 1 FROM users WHERE id = ? AND active = 1", (m.user_id,)).fetchone() is None:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Usuário {m.user_id} não existe.")
+        conn.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
+        for m in body:
+            conn.execute(
+                "INSERT INTO project_members (project_id, user_id, budget_hours, due_date) VALUES (?, ?, ?, ?)",
+                (project_id, m.user_id, m.budget_hours, m.due_date.isoformat() if m.due_date else None),
+            )
+    return list_members(project_id)
 
 
 @app.post("/projects", status_code=201)
@@ -364,6 +416,16 @@ def _check_active_project(conn, project_id: int) -> None:
     row = conn.execute("SELECT active FROM projects WHERE id = ?", (project_id,)).fetchone()
     if row is None or not row["active"]:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Projeto inexistente ou inativo.")
+
+
+def _check_allocated(conn, project_id: int, user: dict) -> None:
+    """Projeto com equipe definida só aceita horas de quem está nela (o gestor pode tudo)."""
+    if user["role"] == "gestor":
+        return
+    members = {r["user_id"] for r in conn.execute(
+        "SELECT user_id FROM project_members WHERE project_id = ?", (project_id,))}
+    if members and user["id"] not in members:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Você não está alocado neste projeto.")
 
 
 def _check_activity(conn, activity_id: int | None) -> None:
@@ -449,6 +511,7 @@ def _entry_values(body: EntryIn) -> tuple:
 def create_entry(body: EntryIn, user: dict = Depends(current_user)):
     with connect() as conn:
         _check_active_project(conn, body.project_id)
+        _check_allocated(conn, body.project_id, user)
         _check_activity(conn, body.activity_id)
         new_id = conn.execute(
             """INSERT INTO entries (project_id, activity_id, work_date, start_time, end_time, break_minutes,
@@ -464,6 +527,9 @@ def update_entry(entry_id: int, body: EntryIn, user: dict = Depends(current_user
     with connect() as conn:
         _own_entry(conn, entry_id, user)
         _check_active_project(conn, body.project_id)
+        current = conn.execute("SELECT project_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if current["project_id"] != body.project_id:
+            _check_allocated(conn, body.project_id, user)
         _check_activity(conn, body.activity_id)
         conn.execute(
             """UPDATE entries SET project_id = ?, activity_id = ?, work_date = ?, start_time = ?, end_time = ?,
@@ -531,6 +597,7 @@ def get_timer(user: dict = Depends(current_user)):
 def start_timer(body: TimerStart, user: dict = Depends(current_user)):
     with connect() as conn:
         _check_active_project(conn, body.project_id)
+        _check_allocated(conn, body.project_id, user)
         _check_activity(conn, body.activity_id)
         if conn.execute("SELECT 1 FROM timers WHERE user_id = ?", (user["id"],)).fetchone():
             raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um cronômetro rodando. Pare ou descarte antes.")
@@ -639,6 +706,69 @@ def dashboard(today: dt.date | None = None, user: dict = Depends(current_user)):
 
 
 # ---------- relatórios (gestor) ----------
+
+
+@app.get("/reports/team-grid")
+def team_grid(date_from: dt.date, date_to: dt.date, _: dict = Depends(manager)):
+    """Grade colaborador × projeto × dia. Uma linha para cada alocação em projeto ativo e para cada
+    par pessoa/projeto com horas no período. As cores são calculadas no app a partir de:
+    horas previstas e prazo da pessoa (ou do projeto), horas antes do período e horas por dia."""
+    if date_to < date_from or (date_to - date_from).days > 62:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Período inválido (máximo de 62 dias).")
+    with connect() as conn:
+        pairs = {
+            (r["user_id"], r["project_id"]): dict(r)
+            for r in conn.execute(
+                """SELECT m.user_id, m.project_id, m.budget_hours, m.due_date, 1 AS allocated
+                   FROM project_members m JOIN projects p ON p.id = m.project_id JOIN users u ON u.id = m.user_id
+                   WHERE p.active = 1 AND u.active = 1"""
+            )
+        }
+        daily = conn.execute(
+            """SELECT user_id, project_id, work_date, SUM(hours) AS hours FROM entries
+               WHERE work_date >= ? AND work_date <= ? GROUP BY user_id, project_id, work_date""",
+            (date_from.isoformat(), date_to.isoformat()),
+        ).fetchall()
+        for d in daily:
+            pairs.setdefault((d["user_id"], d["project_id"]),
+                             {"user_id": d["user_id"], "project_id": d["project_id"],
+                              "budget_hours": None, "due_date": None, "allocated": 0})
+        before = {
+            (r["user_id"], r["project_id"]): r["hours"]
+            for r in conn.execute(
+                "SELECT user_id, project_id, SUM(hours) AS hours FROM entries WHERE work_date < ? GROUP BY user_id, project_id",
+                (date_from.isoformat(),),
+            )
+        }
+        totals = {
+            (r["user_id"], r["project_id"]): r["hours"]
+            for r in conn.execute("SELECT user_id, project_id, SUM(hours) AS hours FROM entries GROUP BY user_id, project_id")
+        }
+        users = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users")}
+        projects = {r["id"]: dict(r) for r in conn.execute("SELECT id, code, client, name, due_date FROM projects")}
+    days_by_pair: dict = {}
+    for d in daily:
+        days_by_pair.setdefault((d["user_id"], d["project_id"]), {})[d["work_date"]] = d["hours"]
+    rows = []
+    for (uid, pid), a in pairs.items():
+        proj = projects[pid]
+        rows.append({
+            "user_id": uid,
+            "user_name": users[uid],
+            "project_id": pid,
+            "project_code": proj["code"],
+            "project_client": proj["client"],
+            "project_name": proj["name"],
+            "allocated": bool(a["allocated"]),
+            "budget_hours": a["budget_hours"],
+            "due_date": a["due_date"] or proj["due_date"],
+            "hours_before": before.get((uid, pid), 0),
+            "total_hours": totals.get((uid, pid), 0),
+            "days": days_by_pair.get((uid, pid), {}),
+        })
+    rows.sort(key=lambda r: (r["user_name"], r["project_code"]))
+    n = (date_to - date_from).days + 1
+    return {"days": [(date_from + dt.timedelta(days=i)).isoformat() for i in range(n)], "rows": rows}
 
 
 @app.get("/reports/by-activity")

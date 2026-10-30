@@ -74,6 +74,7 @@ class Project {
     this.sapWbs = '',
     this.sapSalesOrder = '',
     double? periodHours,
+    this.members = 0,
   }) : periodHours = periodHours ?? usedHours;
 
   final int id;
@@ -95,6 +96,9 @@ class Project {
 
   /// Horas lançadas no período filtrado do relatório (igual a [usedHours] sem filtro).
   final double periodHours;
+
+  /// Quantos projetistas estão alocados (0 = aberto a todos).
+  final int members;
 
   /// Elemento PEP e ordem de venda no SAP, para casar os dados na integração.
   final String sapWbs;
@@ -118,7 +122,35 @@ class Project {
         sapWbs: j['sap_wbs'] ?? '',
         sapSalesOrder: j['sap_sales_order'] ?? '',
         periodHours: (j['total_hours'] as num?)?.toDouble(),
+        members: j['members'] ?? 0,
       );
+}
+
+/// Projetista alocado num projeto, com horas e prazo próprios.
+class Member {
+  Member({required this.userId, required this.userName, this.budgetHours, this.dueDate, this.usedHours = 0});
+
+  final int userId;
+  final String userName;
+  final double? budgetHours;
+
+  /// Null = entrega do projeto.
+  final DateTime? dueDate;
+  final double usedHours;
+
+  factory Member.fromJson(Map<String, dynamic> j) => Member(
+        userId: j['user_id'],
+        userName: j['user_name'],
+        budgetHours: (j['budget_hours'] as num?)?.toDouble(),
+        dueDate: j['due_date'] == null ? null : DateTime.parse(j['due_date']),
+        usedHours: (j['used_hours'] as num? ?? 0).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'user_id': userId,
+        'budget_hours': budgetHours,
+        'due_date': dueDate?.toIso8601String().substring(0, 10),
+      };
 }
 
 /// Dados do formulário de projeto, antes de ir para a API.
@@ -343,5 +375,72 @@ class DashboardData {
         projects: [for (final p in j['projects_in_progress'] as List) Project.fromJson(p)],
         recent: [for (final e in j['recent_entries'] as List) Entry.fromJson(e)],
         teamWeekHours: (j['team_week_hours'] as num?)?.toDouble(),
+      );
+}
+
+/// Linha da grade da equipe: uma pessoa em um projeto, com as horas de cada dia.
+class GridRow {
+  GridRow({
+    required this.userId,
+    required this.userName,
+    required this.projectId,
+    required this.projectCode,
+    required this.projectClient,
+    required this.allocated,
+    required this.hoursBefore,
+    required this.totalHours,
+    required this.days,
+    this.budgetHours,
+    this.dueDate,
+  });
+
+  final int userId;
+  final String userName;
+  final int projectId;
+  final String projectCode;
+  final String projectClient;
+
+  /// false = apontou sem estar alocado (projeto aberto ou lançamento do gestor).
+  final bool allocated;
+
+  /// Horas previstas para a pessoa nesse projeto.
+  final double? budgetHours;
+
+  /// Prazo da pessoa (ou entrega do projeto).
+  final DateTime? dueDate;
+
+  /// Horas lançadas antes do primeiro dia da grade.
+  final double hoursBefore;
+  final double totalHours;
+
+  /// "aaaa-mm-dd" → horas do dia.
+  final Map<String, double> days;
+
+  String get projectLabel => projectClient.isEmpty ? projectCode : '$projectCode · $projectClient';
+
+  factory GridRow.fromJson(Map<String, dynamic> j) => GridRow(
+        userId: j['user_id'],
+        userName: j['user_name'],
+        projectId: j['project_id'],
+        projectCode: j['project_code'],
+        projectClient: j['project_client'] ?? '',
+        allocated: j['allocated'] ?? false,
+        budgetHours: (j['budget_hours'] as num?)?.toDouble(),
+        dueDate: j['due_date'] == null ? null : DateTime.parse(j['due_date']),
+        hoursBefore: (j['hours_before'] as num).toDouble(),
+        totalHours: (j['total_hours'] as num).toDouble(),
+        days: {for (final e in (j['days'] as Map).entries) e.key as String: (e.value as num).toDouble()},
+      );
+}
+
+class TeamGrid {
+  TeamGrid({required this.days, required this.rows});
+
+  final List<DateTime> days;
+  final List<GridRow> rows;
+
+  factory TeamGrid.fromJson(Map<String, dynamic> j) => TeamGrid(
+        days: [for (final d in j['days'] as List) DateTime.parse(d)],
+        rows: [for (final r in j['rows'] as List) GridRow.fromJson(r)],
       );
 }

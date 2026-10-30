@@ -31,6 +31,17 @@ PROJECTS = [
     ("INT-001", "Interno", "Treinamento interno", None, None),
 ]
 
+# Equipe de cada projeto: (e-mail, número do projeto, horas previstas da pessoa, dias até o prazo dela).
+# Prazo None = entrega do projeto. INT-001 fica sem equipe (aberto a todos).
+ALLOCATIONS = [
+    ("ana@exemplo.com", "PRJ-001", 60, 20),
+    ("ana@exemplo.com", "PRJ-002", 14, None),
+    ("bruno@exemplo.com", "PRJ-001", 40, None),
+    ("bruno@exemplo.com", "PRJ-003", 24, 3),
+    ("carla@exemplo.com", "PRJ-002", 20, 6),
+    ("carla@exemplo.com", "PRJ-003", 30, None),
+]
+
 DESCRIPTIONS = [
     "Desenho do suporte da apertadeira",
     "Diagrama elétrico do painel",
@@ -67,7 +78,20 @@ def run() -> None:
 
         rng = random.Random(42)
         tech_ids = [r["id"] for r in conn.execute("SELECT id FROM users WHERE role = 'tecnico'")]
-        project_ids = [r["id"] for r in conn.execute("SELECT id FROM projects")]
+        user_by_email = {r["email"]: r["id"] for r in conn.execute("SELECT id, email FROM users")}
+        project_by_code = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM projects")}
+        projects_of: dict[int, list[int]] = {}
+        for email, code, budget, due_in in ALLOCATIONS:
+            uid, pid = user_by_email[email], project_by_code[code]
+            due = (today + dt.timedelta(days=due_in)).isoformat() if due_in is not None else None
+            conn.execute(
+                "INSERT INTO project_members (project_id, user_id, budget_hours, due_date) VALUES (?, ?, ?, ?)",
+                (pid, uid, budget, due),
+            )
+            projects_of.setdefault(uid, []).append(pid)
+        # Cada um aponta nos projetos em que está alocado (e às vezes no interno, que é aberto).
+        for uid in tech_ids:
+            projects_of.setdefault(uid, []).append(project_by_code["INT-001"])
         activity_ids = [r["id"] for r in conn.execute("SELECT id FROM activities WHERE name <> 'Outros'")]
         for days_ago in range(14):
             day = today - dt.timedelta(days=days_ago)
@@ -82,7 +106,7 @@ def run() -> None:
                         """INSERT INTO entries (user_id, project_id, activity_id, work_date, start_time, end_time,
                                                 break_minutes, hours, description)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (uid, rng.choice(project_ids), rng.choice(activity_ids), day.isoformat(),
+                        (uid, rng.choice(projects_of[uid]), rng.choice(activity_ids), day.isoformat(),
                          start, end, pause, h, rng.choice(DESCRIPTIONS)),
                     )
     print(f"Dados de demonstração criados. Senha de todos: {DEMO_PASSWORD}")

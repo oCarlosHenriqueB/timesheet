@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS app_meta (
     value TEXT NOT NULL
 );
 
+-- Alocação: quais projetistas ficam com o projeto, com horas e prazo próprios.
+-- Projeto sem ninguém alocado fica aberto a todos. Prazo vazio = entrega do projeto.
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id   INTEGER NOT NULL REFERENCES projects(id),
+    user_id      INTEGER NOT NULL REFERENCES users(id),
+    budget_hours REAL,
+    due_date     TEXT,
+    PRIMARY KEY (project_id, user_id)
+);
+
 -- Tipos de atividade do apontamento (instalação, calibração...). O gestor edita a lista.
 CREATE TABLE IF NOT EXISTS activities (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -17,6 +17,31 @@ gasta em cada projeto. Projetistas lançam horas; gestores veem os totais por pr
 | Acesso | Login com e-mail e senha; sem aprovação de horas |
 | Uso | Portfólio agora, pensado para uso interno depois |
 
+## v0.7: equipe do projeto e grade de acompanhamento
+
+**Equipe do projeto (gestor).** Em **Projetos → coluna Equipe**, o gestor escolhe quais projetistas ficam
+com o projeto e define, para cada um, as **horas previstas** e o **prazo** (vazio = entrega do projeto).
+- Projeto com equipe: só os alocados veem o projeto e apontam horas nele (manual ou cronômetro).
+- Projeto sem ninguém alocado ("Aberto a todos"): qualquer projetista aponta, como antes.
+- Lançamentos antigos de quem saiu da equipe continuam lá e podem ser editados; só não dá para lançar novos.
+
+**Grade de acompanhamento (gestor).** No **Dashboard** e em **Gestão → Acompanhamento da equipe**:
+linhas por colaborador e, dentro dele, cada projeto; colunas com os dias da semana ou do mês. Cada
+célula mostra as horas do dia, **colorida pela situação daquela pessoa naquele projeto até aquele dia**:
+
+| Cor | Significa |
+|---|---|
+| Verde | Dentro das horas previstas (até 70%) e com mais de 7 dias para o prazo |
+| Amarelo | 70–90% das horas previstas, ou a até 7 dias do prazo |
+| Vermelho | Acima de 90% das horas, ou trabalhando depois do prazo |
+| Roxo | Passou das horas previstas |
+| Cinza | Sem horas previstas nem prazo (ex.: projeto aberto, sem alocação) |
+
+No fim da linha: total geral, horas previstas da pessoa, prazo e um ponto com a situação de hoje
+(passe o mouse para ver o saldo e os dias até o prazo). Períodos de até 62 dias.
+
+API: `GET/PUT /projects/{id}/members`, `GET /reports/team-grid?date_from=&date_to=`.
+
 ## v0.6: interface corporativa (protótipo para o gestor)
 
 Interface pensada para desktop, com menu lateral fixo e visual em azul, branco e cinza.

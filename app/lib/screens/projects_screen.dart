@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../budget.dart';
+import '../dialogs/members_dialog.dart';
 import '../dialogs/project_dialog.dart';
 import '../dialogs/sap_import_dialog.dart';
 import '../format.dart';
@@ -48,6 +49,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       project == null ? 'Projeto criado.' : 'Projeto atualizado.',
     );
     _reload();
+  }
+
+  Future<void> _team(Project p) async {
+    final saved = await showDialog<bool>(context: context, builder: (_) => MembersDialog(api: widget.api, project: p));
+    if (saved == true) _reload();
   }
 
   Future<void> _toggle(Project p) async {
@@ -131,6 +137,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                         const DataColumn(label: Text('Código')),
                         const DataColumn(label: Text('Cliente')),
                         const DataColumn(label: Text('Status')),
+                        if (manager) const DataColumn(label: Text('Equipe')),
                         const DataColumn(label: Text('Estimadas'), numeric: true),
                         const DataColumn(label: Text('Realizadas'), numeric: true),
                         const DataColumn(label: Text('Saldo / uso')),
@@ -162,10 +169,21 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                               ],
                             )),
                             DataCell(_ActiveChip(active: p.active)),
+                            if (manager)
+                              DataCell(
+                                TextButton.icon(
+                                  onPressed: () => _team(p),
+                                  icon: const Icon(Icons.group_outlined, size: 18),
+                                  label: Text(p.members == 0 ? 'Aberto a todos' : '${p.members} pessoa(s)'),
+                                ),
+                              ),
                             DataCell(Text(p.budgetHours == null ? '—' : formatHours(p.budgetHours!))),
                             DataCell(Text(formatHours(p.usedHours))),
                             DataCell(SizedBox(width: 190, child: _UsageCell(project: p))),
-                            DataCell(StatusBadge(health: dateHealth(p, today), label: dateLabel(p, today))),
+                            DataCell(StatusBadge(
+                              health: dateHealth(p, today),
+                              label: dateLabel(p, today).replaceFirst('Entrega ', ''),
+                            )),
                             if (manager)
                               DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
                                 IconButton(

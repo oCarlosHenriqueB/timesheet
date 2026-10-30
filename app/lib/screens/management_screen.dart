@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/layout.dart';
+import '../widgets/team_grid.dart';
 
 /// Área do gestor: acompanhamento da equipe, usuários e atividades.
 /// A aprovação de horas entra aqui na fase gerencial.
@@ -95,7 +96,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           builder: (d) {
             final (users, activities, week) = d;
             return SizedBox(
-              height: 680,
+              height: 900,
               child: TabBarView(children: [
                 _team(week),
                 _users(users),
@@ -122,6 +123,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 'devolver os apontamentos da equipe. Por enquanto, use o Histórico com "Toda a equipe" para consultar.'),
           ),
         ),
+        const SizedBox(height: 16),
+        TeamGridCard(api: widget.api, title: 'Dia a dia por colaborador e projeto'),
         const SizedBox(height: 16),
         SectionCard(
           title: 'Horas da equipe nesta semana · ${formatHours(total)}',
