@@ -583,3 +583,57 @@ def test_grade_da_equipe(client):
     assert client.get("/reports/team-grid?date_from=2031-03-02&date_to=2031-03-08", headers=bruno).status_code == 403
     assert client.get("/reports/team-grid?date_from=2031-03-08&date_to=2031-03-01", headers=gestor).status_code == 422
     assert client.get("/reports/team-grid?date_from=2031-01-01&date_to=2031-04-30", headers=gestor).status_code == 422
+
+
+# ---------- editar e excluir usuários ----------
+
+
+def test_gestor_edita_usuario_e_redefine_senha(client):
+    gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
+    uid = ids(client, gestor)["Ana Souza"]
+    assert client.patch(f"/users/{uid}", headers=ana, json={"name": "X"}).status_code == 403
+
+    r = client.patch(f"/users/{uid}", headers=gestor, json={"name": "Ana S. Souza", "email": "Ana.Nova@Exemplo.com", "password": "nova-senha"})
+    assert r.status_code == 200
+    assert client.get("/me", headers=ana).status_code == 401  # senha nova derruba a sessão antiga
+    assert client.post("/auth/login", json={"email": "ana@exemplo.com", "password": "demo123"}).status_code == 401
+    r = client.post("/auth/login", json={"email": "ana.nova@exemplo.com", "password": "nova-senha"})
+    assert r.status_code == 200 and r.json()["user"]["name"] == "Ana S. Souza"
+    # e-mail repetido
+    assert client.patch(f"/users/{uid}", headers=gestor, json={"email": "bruno@exemplo.com"}).status_code == 409
+
+
+def test_excluir_usuario_sem_horas_apaga_com_horas_desativa(client):
+    gestor = login(client, "gestor@exemplo.com")
+    novo = client.post("/users", headers=gestor, json={"name": "Temp", "email": "temp@exemplo.com", "password": "123456"}).json()["id"]
+    assert client.delete(f"/users/{novo}", headers=gestor).json() == {"deleted": True, "deactivated": False}
+    assert novo not in [u["id"] for u in client.get("/users", headers=gestor).json()]
+
+    bruno = login(client, "bruno@exemplo.com")
+    bid = ids(client, gestor)["Bruno Lima"]
+    horas_antes = sum(e["hours"] for e in client.get(f"/entries?user_id={bid}", headers=gestor).json())
+    assert client.delete(f"/users/{bid}", headers=gestor).json() == {"deleted": False, "deactivated": True}
+    assert client.get("/me", headers=bruno).status_code == 401
+    assert client.post("/auth/login", json={"email": "bruno@exemplo.com", "password": "demo123"}).status_code == 401
+    # Histórico preservado e fora das equipes
+    assert sum(e["hours"] for e in client.get(f"/entries?user_id={bid}", headers=gestor).json()) == horas_antes > 0
+    for p in client.get("/projects", headers=gestor).json():
+        assert bid not in [m["user_id"] for m in client.get(f"/projects/{p['id']}/members", headers=gestor).json()]
+    # Reativar devolve o acesso
+    client.patch(f"/users/{bid}", headers=gestor, json={"active": True})
+    assert client.post("/auth/login", json={"email": "bruno@exemplo.com", "password": "demo123"}).status_code == 200
+
+
+def test_protecoes_do_gestor(client):
+    gestor = login(client, "gestor@exemplo.com")
+    me = client.get("/me", headers=gestor).json()["id"]
+    ana = login(client, "ana@exemplo.com")
+    aid = ids(client, gestor)["Ana Souza"]
+    assert client.delete(f"/users/{aid}", headers=ana).status_code == 403
+    assert client.delete(f"/users/{me}", headers=gestor).status_code == 409  # a si mesmo
+    assert client.patch(f"/users/{me}", headers=gestor, json={"active": False}).status_code == 409
+    assert client.patch(f"/users/{me}", headers=gestor, json={"role": "tecnico"}).status_code == 409  # último gestor
+    # Com outro gestor, pode deixar de ser gestor
+    client.patch(f"/users/{aid}", headers=gestor, json={"role": "gestor"})
+    assert client.patch(f"/users/{me}", headers=gestor, json={"role": "tecnico"}).status_code == 200
+    assert client.delete("/users/9999", headers=ana).status_code == 404  # a Ana agora é gestora

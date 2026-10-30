@@ -272,6 +272,86 @@ def create_user(body: UserIn, _: dict = Depends(manager)):
     return {"id": new_id}
 
 
+class UserPatch(BaseModel):
+    """Só os campos enviados mudam. password = nova senha (o gestor redefine)."""
+
+    name: str | None = Field(default=None, min_length=1)
+    email: str | None = Field(default=None, min_length=3)
+    role: Role | None = None
+    password: str | None = Field(default=None, min_length=6)
+    active: bool | None = None
+
+
+def _other_active_managers(conn, user_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM users WHERE role = 'gestor' AND active = 1 AND id <> ?", (user_id,)
+    ).fetchone()["n"]
+
+
+def _revoke_access(conn, user_id: int) -> None:
+    """Tira a pessoa do sistema sem apagar as horas dela: sessões, cronômetro e equipes."""
+    conn.execute("DELETE FROM tokens WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM timers WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM project_members WHERE user_id = ?", (user_id,))
+
+
+@app.patch("/users/{user_id}")
+def update_user(user_id: int, body: UserPatch, me: dict = Depends(manager)):
+    try:
+        with connect() as conn:
+            row = conn.execute("SELECT role, active FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
+            loses_manager = row["role"] == "gestor" and row["active"] and (
+                (body.role is not None and body.role != "gestor") or body.active is False
+            )
+            if loses_manager and _other_active_managers(conn, user_id) == 0:
+                raise HTTPException(status.HTTP_409_CONFLICT, "É preciso ter pelo menos um gestor ativo.")
+            if user_id == me["id"] and body.active is False:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Você não pode desativar o próprio usuário.")
+            changes: dict = {}
+            if body.name is not None:
+                changes["name"] = body.name.strip()
+            if body.email is not None:
+                changes["email"] = body.email.strip().lower()
+            if body.role is not None:
+                changes["role"] = body.role
+            if body.password is not None:
+                changes["password_hash"] = hash_password(body.password)
+            if body.active is not None:
+                changes["active"] = int(body.active)
+            for column, value in changes.items():  # nomes vêm do modelo, não do usuário
+                conn.execute(f"UPDATE users SET {column} = ? WHERE id = ?", (value, user_id))
+            if body.active is False:
+                _revoke_access(conn, user_id)
+            elif body.password is not None and user_id != me["id"]:
+                conn.execute("DELETE FROM tokens WHERE user_id = ?", (user_id,))  # senha nova: entra de novo
+    except IntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um usuário com esse e-mail.")
+    return {"ok": True}
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, me: dict = Depends(manager)):
+    """Exclui o usuário. Quem já lançou horas é só desativado, para o histórico e os relatórios
+    continuarem certos; quem nunca lançou é apagado de vez."""
+    if user_id == me["id"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Você não pode excluir o próprio usuário.")
+    with connect() as conn:
+        row = conn.execute("SELECT role, active FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
+        if row["role"] == "gestor" and row["active"] and _other_active_managers(conn, user_id) == 0:
+            raise HTTPException(status.HTTP_409_CONFLICT, "É preciso ter pelo menos um gestor ativo.")
+        _revoke_access(conn, user_id)
+        has_entries = conn.execute("SELECT 1 FROM entries WHERE user_id = ? LIMIT 1", (user_id,)).fetchone()
+        if has_entries:
+            conn.execute("UPDATE users SET active = 0 WHERE id = ?", (user_id,))
+            return {"deleted": False, "deactivated": True}
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return {"deleted": True, "deactivated": False}
+
+
 # ---------- projetos ----------
 
 

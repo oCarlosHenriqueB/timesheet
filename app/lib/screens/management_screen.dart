@@ -13,9 +13,12 @@ import '../widgets/team_grid.dart';
 /// Área do gestor: acompanhamento da equipe, usuários e atividades.
 /// A aprovação de horas entra aqui na fase gerencial.
 class ManagementScreen extends StatefulWidget {
-  const ManagementScreen({super.key, required this.api});
+  const ManagementScreen({super.key, required this.api, required this.user});
 
   final Api api;
+
+  /// Gestor logado (não pode excluir a si mesmo).
+  final User user;
 
   @override
   State<ManagementScreen> createState() => _ManagementScreenState();
@@ -37,6 +40,48 @@ class _ManagementScreenState extends State<ManagementScreen> {
     if (values == null || !mounted) return;
     await runWithFeedback(
         context, () => widget.api.createUser(values[0], values[1], values[2], values[3]), 'Usuário criado.');
+    _reload();
+  }
+
+  Future<void> _editUser(User u) async {
+    final values = await showDialog<List<String>>(context: context, builder: (_) => _UserDialog(user: u));
+    if (values == null || !mounted) return;
+    final [name, email, password, role] = values;
+    await runWithFeedback(
+      context,
+      () => widget.api.updateUser(
+        u.id,
+        name: name,
+        email: email,
+        role: role,
+        password: password.isEmpty ? null : password,
+      ),
+      password.isEmpty ? 'Usuário atualizado.' : 'Usuário atualizado e senha redefinida.',
+    );
+    _reload();
+  }
+
+  Future<void> _deleteUser(User u) async {
+    final ok = await confirm(
+      context,
+      'Excluir ${u.name}? A pessoa perde o acesso e sai das equipes dos projetos. '
+      'Se já lançou horas, o usuário fica desativado para manter o histórico e os relatórios.',
+    );
+    if (!ok || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final deleted = await widget.api.deleteUser(u.id);
+      messenger.showSnackBar(SnackBar(
+        content: Text(deleted ? '${u.name} foi excluído.' : '${u.name} foi desativado; as horas lançadas continuam no histórico.'),
+      ));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+    _reload();
+  }
+
+  Future<void> _reactivate(User u) async {
+    await runWithFeedback(context, () => widget.api.updateUser(u.id, active: true), '${u.name} foi reativado.');
     _reload();
   }
 
@@ -147,12 +192,36 @@ class _ManagementScreenState extends State<ManagementScreen> {
             DataColumn(label: Text('Nome')),
             DataColumn(label: Text('E-mail')),
             DataColumn(label: Text('Perfil')),
+            DataColumn(label: Text('Situação')),
+            DataColumn(label: Text('')),
           ], rows: [
             for (final u in users)
               DataRow(cells: [
-                DataCell(Text(u.name)),
-                DataCell(Text(u.email)),
+                DataCell(Text(u.name, style: TextStyle(color: u.active ? null : AppColors.textMuted))),
+                DataCell(Text(u.email, style: TextStyle(color: u.active ? null : AppColors.textMuted))),
                 DataCell(Text(u.roleLabel)),
+                DataCell(Text(u.active ? 'Ativo' : 'Desativado (sem acesso)',
+                    style: TextStyle(color: u.active ? null : AppColors.textMuted))),
+                DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    tooltip: 'Editar',
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    onPressed: () => _editUser(u),
+                  ),
+                  if (u.active)
+                    IconButton(
+                      tooltip: u.id == widget.user.id ? 'Você não pode excluir o próprio usuário' : 'Excluir',
+                      icon: const Icon(Icons.person_remove_outlined, size: 18),
+                      color: Colors.red.shade700,
+                      onPressed: u.id == widget.user.id ? null : () => _deleteUser(u),
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Reativar',
+                      icon: const Icon(Icons.person_add_alt_1_outlined, size: 18, color: AppColors.primary),
+                      onPressed: () => _reactivate(u),
+                    ),
+                ])),
               ]),
           ]),
         ),
@@ -198,9 +267,12 @@ class _ManagementScreenState extends State<ManagementScreen> {
   }
 }
 
-/// Novo usuário: nome, e-mail, senha inicial e perfil. Devolve [nome, email, senha, papel].
+/// Novo usuário ou edição: nome, e-mail, senha e perfil. Devolve [nome, email, senha, papel].
+/// Na edição a senha é opcional (vazia = mantém a atual).
 class _UserDialog extends StatefulWidget {
-  const _UserDialog();
+  const _UserDialog({this.user});
+
+  final User? user;
 
   @override
   State<_UserDialog> createState() => _UserDialogState();
@@ -208,17 +280,19 @@ class _UserDialog extends StatefulWidget {
 
 class _UserDialogState extends State<_UserDialog> {
   final form = GlobalKey<FormState>();
-  final name = TextEditingController();
-  final email = TextEditingController();
+  late final name = TextEditingController(text: widget.user?.name ?? '');
+  late final email = TextEditingController(text: widget.user?.email ?? '');
   final password = TextEditingController();
-  String role = 'tecnico';
+  late String role = widget.user?.role ?? 'tecnico';
+
+  bool get editing => widget.user != null;
 
   String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Obrigatório.' : null;
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Novo usuário'),
+      title: Text(editing ? 'Editar usuário' : 'Novo usuário'),
       content: SizedBox(
         width: 400,
         child: Form(
@@ -231,8 +305,15 @@ class _UserDialogState extends State<_UserDialog> {
             TextFormField(
               controller: password,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Senha inicial'),
-              validator: (v) => (v ?? '').length < 6 ? 'Mínimo de 6 caracteres.' : null,
+              decoration: InputDecoration(
+                labelText: editing ? 'Nova senha (opcional)' : 'Senha inicial',
+                helperText: editing ? 'Deixe vazio para manter a senha atual.' : null,
+              ),
+              validator: (v) {
+                final value = v ?? '';
+                if (editing && value.isEmpty) return null;
+                return value.length < 6 ? 'Mínimo de 6 caracteres.' : null;
+              },
             ),
             const SizedBox(height: 16),
             SegmentedButton<String>(

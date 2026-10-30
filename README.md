@@ -42,6 +42,12 @@ No fim da linha: total geral, horas previstas da pessoa, prazo e um ponto com a 
 
 API: `GET/PUT /projects/{id}/members`, `GET /reports/team-grid?date_from=&date_to=`.
 
+**Usuários (gestor).** Em **Gestão → Usuários**, o gestor edita nome, e-mail, perfil e redefine a senha,
+e exclui usuários. Quem já lançou horas é **desativado** em vez de apagado: perde o acesso e sai das
+equipes, mas as horas continuam no histórico e nos relatórios (dá para reativar). Quem nunca lançou é
+apagado de vez. O gestor não exclui a si mesmo, e sempre sobra pelo menos um gestor ativo.
+API: `PATCH /users/{id}`, `DELETE /users/{id}`.
+
 ## v0.6: interface corporativa (protótipo para o gestor)
 
 Interface pensada para desktop, com menu lateral fixo e visual em azul, branco e cinza.

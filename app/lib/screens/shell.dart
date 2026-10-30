@@ -59,7 +59,7 @@ class _AppShellState extends State<AppShell> {
       AppPage.history => HistoryScreen(api: api, user: user),
       AppPage.projects => ProjectsScreen(api: api, user: user),
       AppPage.reports => ReportsScreen(api: api),
-      AppPage.management => ManagementScreen(api: api),
+      AppPage.management => ManagementScreen(api: api, user: user),
     };
   }
 

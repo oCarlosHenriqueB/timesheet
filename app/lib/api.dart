@@ -106,6 +106,19 @@ class Api {
     return data.map((j) => User.fromJson(j)).toList();
   }
 
+  /// Só os campos informados mudam; [password] redefine a senha.
+  Future<void> updateUser(int id, {String? name, String? email, String? role, String? password, bool? active}) =>
+      _send('PATCH', '/users/$id', {
+        'name': ?name,
+        'email': ?email,
+        'role': ?role,
+        'password': ?password,
+        'active': ?active,
+      });
+
+  /// Exclui; quem já tem horas lançadas é desativado. Devolve true se apagou de vez.
+  Future<bool> deleteUser(int id) async => (await _send('DELETE', '/users/$id'))['deleted'] as bool;
+
   Future<void> createUser(String name, String email, String password, String role) =>
       _send('POST', '/users', {'name': name, 'email': email, 'password': password, 'role': role});
 
