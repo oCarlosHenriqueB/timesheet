@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../models.dart';
 import '../theme.dart';
+import '../widgets/password_field.dart';
 
 /// Login com painel institucional à esquerda (desktop) e formulário à direita.
 class LoginScreen extends StatefulWidget {
@@ -72,10 +73,10 @@ class _LoginScreenState extends State<LoginScreen> {
         autofillHints: const [AutofillHints.email],
       ),
       const SizedBox(height: 14),
-      TextField(
+      PasswordField(
         controller: password,
-        decoration: const InputDecoration(labelText: 'Senha', prefixIcon: Icon(Icons.lock_outline)),
-        obscureText: true,
+        label: 'Senha',
+        prefixIcon: const Icon(Icons.lock_outline),
         onSubmitted: (_) => _submit(),
       ),
       if (error != null) ...[

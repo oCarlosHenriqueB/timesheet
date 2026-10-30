@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../format.dart';
@@ -8,6 +9,7 @@ import '../theme.dart';
 import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/layout.dart';
+import '../widgets/password_field.dart';
 import '../widgets/team_grid.dart';
 
 /// Área do gestor: acompanhamento da equipe, usuários e atividades.
@@ -38,26 +40,72 @@ class _ManagementScreenState extends State<ManagementScreen> {
   Future<void> _newUser() async {
     final values = await showDialog<List<String>>(context: context, builder: (_) => const _UserDialog());
     if (values == null || !mounted) return;
-    await runWithFeedback(
-        context, () => widget.api.createUser(values[0], values[1], values[2], values[3]), 'Usuário criado.');
+    final [name, email, password, role] = values;
+    try {
+      await widget.api.createUser(name, email, password, role);
+      if (mounted) await _showCredentials(name, email, password, created: true);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
     _reload();
+  }
+
+  /// Mostra o login exatamente como ficou salvo, para o gestor conferir e mandar à pessoa.
+  Future<void> _showCredentials(String name, String email, String password, {required bool created}) {
+    final login = email.trim().toLowerCase(); // a API guarda o e-mail em minúsculas
+    final text = 'Acesso ao Timesheet\nhttps://ocarloshenriqueb.github.io/timesheet/\nE-mail: $login\nSenha: $password';
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(created ? 'Usuário criado' : 'Senha redefinida'),
+        content: SizedBox(
+          width: 440,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Confira e passe estes dados para $name por mensagem particular:'),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(8)),
+              child: SelectableText(text, style: const TextStyle(fontFamily: 'monospace', height: 1.5)),
+            ),
+            const SizedBox(height: 8),
+            const Text('A senha diferencia maiúsculas de minúsculas.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          ]),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dados de acesso copiados.')));
+              }
+            },
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('Copiar'),
+          ),
+          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Pronto')),
+        ],
+      ),
+    );
   }
 
   Future<void> _editUser(User u) async {
     final values = await showDialog<List<String>>(context: context, builder: (_) => _UserDialog(user: u));
     if (values == null || !mounted) return;
     final [name, email, password, role] = values;
-    await runWithFeedback(
-      context,
-      () => widget.api.updateUser(
-        u.id,
-        name: name,
-        email: email,
-        role: role,
-        password: password.isEmpty ? null : password,
-      ),
-      password.isEmpty ? 'Usuário atualizado.' : 'Usuário atualizado e senha redefinida.',
-    );
+    if (password.isEmpty) {
+      await runWithFeedback(
+          context, () => widget.api.updateUser(u.id, name: name, email: email, role: role), 'Usuário atualizado.');
+    } else {
+      try {
+        await widget.api.updateUser(u.id, name: name, email: email, role: role, password: password);
+        if (mounted) await _showCredentials(name, email, password, created: false);
+      } on ApiException catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
     _reload();
   }
 
@@ -302,13 +350,10 @@ class _UserDialogState extends State<_UserDialog> {
             const SizedBox(height: 12),
             TextFormField(controller: email, decoration: const InputDecoration(labelText: 'E-mail'), validator: _required),
             const SizedBox(height: 12),
-            TextFormField(
+            PasswordField(
               controller: password,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: editing ? 'Nova senha (opcional)' : 'Senha inicial',
-                helperText: editing ? 'Deixe vazio para manter a senha atual.' : null,
-              ),
+              label: editing ? 'Nova senha (opcional)' : 'Senha inicial',
+              helperText: editing ? 'Deixe vazio para manter a senha atual.' : null,
               validator: (v) {
                 final value = v ?? '';
                 if (editing && value.isEmpty) return null;
