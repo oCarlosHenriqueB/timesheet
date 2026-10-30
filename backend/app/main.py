@@ -375,7 +375,7 @@ def _check_activity(conn, activity_id: int | None) -> None:
 
 
 def _own_entry(conn, entry_id: int, user: dict):
-    """Só o dono (ou o gestor) mexe; apontamento aprovado fica travado para o técnico."""
+    """Só o dono (ou o gestor) mexe; apontamento aprovado fica travado para o projetista."""
     row = conn.execute("SELECT user_id, status FROM entries WHERE id = ?", (entry_id,)).fetchone()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Lançamento não encontrado.")
@@ -410,7 +410,7 @@ def list_entries(
     user_id: int | None = None,
     user: dict = Depends(current_user),
 ):
-    """Técnico vê só os próprios lançamentos; gestor pode pedir os de todos (ou de uma pessoa).
+    """Projetista (papel "tecnico") vê só os próprios lançamentos; gestor pode pedir os de todos (ou de uma pessoa).
     Filtros opcionais: período, projeto, atividade e status."""
     where, params = period_filter("e.work_date", date_from, date_to)
     if user["role"] == "gestor" and (all_users or user_id is not None):

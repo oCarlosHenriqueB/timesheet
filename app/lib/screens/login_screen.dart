@@ -136,7 +136,7 @@ class _BrandPanel extends StatelessWidget {
           style: TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w700, height: 1.15),
         ),
         const SizedBox(height: 16),
-        const Text('Registre, acompanhe e reporte as horas da equipe técnica em um só lugar.', style: muted),
+        const Text('Registre, acompanhe e reporte as horas da equipe de projetos em um só lugar.', style: muted),
         const SizedBox(height: 32),
         bullet(Icons.more_time, 'Apontamento rápido por início e fim, com cronômetro opcional'),
         bullet(Icons.folder_outlined, 'Horas previstas e realizadas por projeto, com alertas de prazo'),

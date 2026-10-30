@@ -16,21 +16,29 @@ CATALOG_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "catalogo_sap_e
 DEMO_PASSWORD = os.environ.get("SEED_PASSWORD", "demo123")
 
 USERS = [
-    ("Gestora Demo", "gestor@exemplo.com", "gestor"),
-    ("Ana Técnica", "ana@exemplo.com", "tecnico"),
-    ("Bruno Engenheiro", "bruno@exemplo.com", "tecnico"),
-    ("Carla Técnica", "carla@exemplo.com", "tecnico"),
+    ("Marina Costa", "gestor@exemplo.com", "gestor"),
+    ("Ana Souza", "ana@exemplo.com", "tecnico"),  # "tecnico" = projetista nas telas
+    ("Bruno Lima", "bruno@exemplo.com", "tecnico"),
+    ("Carla Mendes", "carla@exemplo.com", "tecnico"),
 ]
 
+# Clientes fictícios do segmento (montadoras, máquinas agrícolas e equipamentos pesados).
 # (número, cliente, descrição, horas previstas, dias até a entrega)
 PROJECTS = [
-    ("PRJ-001", "Hospital Exemplo A", "Instalação de compressores", 80, 30),
-    ("PRJ-002", "Indústria Exemplo B", "Manutenção preventiva", 20, 5),
-    ("PRJ-003", "Clínica Exemplo C", "Documentação técnica e ART", 40, 15),
+    ("PRJ-001", "Montadora Automotiva A", "Linha de aparafusamento de motores", 80, 30),
+    ("PRJ-002", "Fabricante de Máquinas Agrícolas B", "Estação de aperto de chassis", 20, 5),
+    ("PRJ-003", "Fabricante de Equipamentos Pesados C", "Retrofit de apertadeiras e integração ao PLC", 40, 15),
     ("INT-001", "Interno", "Treinamento interno", None, None),
 ]
 
-DESCRIPTIONS = ["Visita técnica", "Montagem", "Relatório", "Calibração", "Reunião com cliente"]
+DESCRIPTIONS = [
+    "Desenho do suporte da apertadeira",
+    "Diagrama elétrico do painel",
+    "Programação do controlador",
+    "Ajuste de parâmetros de torque e ângulo",
+    "Teste de aperto na linha",
+    "Reunião de alinhamento com o cliente",
+]
 
 
 def run() -> None:

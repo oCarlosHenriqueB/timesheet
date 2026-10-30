@@ -234,7 +234,7 @@ class _UserDialogState extends State<_UserDialog> {
             const SizedBox(height: 16),
             SegmentedButton<String>(
               segments: const [
-                ButtonSegment(value: 'tecnico', label: Text('Técnico')),
+                ButtonSegment(value: 'tecnico', label: Text('Projetista')),
                 ButtonSegment(value: 'gestor', label: Text('Gestor')),
               ],
               selected: {role},

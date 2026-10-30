@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS timers (
     description TEXT NOT NULL DEFAULT ''
 );
 
+-- Controle de ajustes de dados feitos uma única vez (ex.: lista de atividades v2).
+CREATE TABLE IF NOT EXISTS app_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- Tipos de atividade do apontamento (instalação, calibração...). O gestor edita a lista.
 CREATE TABLE IF NOT EXISTS activities (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,16 +155,22 @@ MIGRATIONS = [
     ("users", "use_timer", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
+# Atividades da equipe de projetos (apertadeiras e automação industrial). Editáveis em Gestão.
 DEFAULT_ACTIVITIES = [
-    "Instalação",
-    "Manutenção",
+    "Projeto mecânico",
+    "Projeto elétrico",
+    "Programação (PLC/controlador)",
+    "Integração de apertadeiras",
+    "Comissionamento",
+    "Instalação / start-up",
     "Calibração",
     "Documentação técnica",
+    "Reunião com cliente",
     "Deslocamento",
     "Treinamento",
-    "Reunião",
     "Outros",
 ]
+ACTIVITIES_VERSION = "2"
 
 
 def _migrate(conn) -> None:
@@ -177,9 +189,23 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(POSTGRES_SCHEMA if database_url() else SQLITE_SCHEMA)
         _migrate(conn)
-        if not conn.execute("SELECT COUNT(*) AS n FROM activities").fetchone()["n"]:
-            for name in DEFAULT_ACTIVITIES:
-                conn.execute("INSERT INTO activities (name) VALUES (?)", (name,))
+        _seed_activities(conn)
+
+
+def _seed_activities(conn) -> None:
+    """Acrescenta as atividades padrão que faltam, uma única vez por versão da lista.
+    Não apaga nem reativa nada: o que o gestor renomeou ou desativou fica como está."""
+    row = conn.execute("SELECT value FROM app_meta WHERE key = 'activities_version'").fetchone()
+    if row and row["value"] == ACTIVITIES_VERSION:
+        return
+    existing = {r["name"] for r in conn.execute("SELECT name FROM activities")}
+    for name in DEFAULT_ACTIVITIES:
+        if name not in existing:
+            conn.execute("INSERT INTO activities (name) VALUES (?)", (name,))
+    if row:
+        conn.execute("UPDATE app_meta SET value = ? WHERE key = 'activities_version'", (ACTIVITIES_VERSION,))
+    else:
+        conn.execute("INSERT INTO app_meta (key, value) VALUES ('activities_version', ?)", (ACTIVITIES_VERSION,))
 
 
 @contextmanager

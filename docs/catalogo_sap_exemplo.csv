@@ -1,5 +1,5 @@
 ﻿projeto;cliente;pep;ordem_venda;horas_previstas;data_entrega
-PRJ-001;Hospital Exemplo A;BR-PRJ-001-01;4500001001;80;
-PRJ-004;Hospital Exemplo D;BR-PRJ-004-01;4500001004;120;15/12/2026
-PRJ-005;Laboratório Exemplo E;BR-PRJ-005-01;4500001005;35,5;30.11.2026
-PRJ-006;Indústria Exemplo F;;4500001006;;
+PRJ-001;Montadora Automotiva A;BR-PRJ-001-01;4500001001;80;
+PRJ-004;Montadora Automotiva D;BR-PRJ-004-01;4500001004;120;15/12/2026
+PRJ-005;Fabricante de Implementos Agrícolas E;BR-PRJ-005-01;4500001005;35,5;30.11.2026
+PRJ-006;Fabricante de Motores F;;4500001006;;

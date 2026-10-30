@@ -1,7 +1,7 @@
 # Timesheet
 
-App web para registrar e somar as horas que uma equipe técnica gasta em cada projeto.
-Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
+App web para registrar e somar as horas que a equipe de projetos (apertadeiras e automação industrial)
+gasta em cada projeto. Projetistas lançam horas; gestores veem os totais por projeto, atividade e pessoa.
 
 > Projeto de portfólio. Todos os dados de exemplo são **fictícios**. A ideia é que ele possa
 > virar uma ferramenta interna depois (veja [Próximos passos](#próximos-passos)).
@@ -10,7 +10,7 @@ Técnicos lançam horas; gestores veem os totais por projeto e por funcionário.
 
 | Tema | Decisão |
 |---|---|
-| Usuários | Técnicos/engenheiros e gestor, até ~20 pessoas |
+| Usuários | Projetistas e gestor, até ~20 pessoas |
 | Plataforma | Web responsiva (PC e navegador do celular) |
 | Lançamento | Manual: projeto, data, horas e descrição |
 | Relatórios | Total por projeto e total por funcionário |
@@ -33,11 +33,20 @@ O logo oficial da empresa não é usado: há um espaço reservado para ele, até
 | **Gestão** (gestor) | Acompanhamento da equipe na semana, usuários e **atividades** (criar, renomear, desativar). Espaço reservado para a aprovação de horas |
 
 **Status do apontamento:** Rascunho, Enviado, Aprovado e Rejeitado. Nesta versão tudo nasce como
-"Enviado" e o filtro já funciona. Apontamento aprovado fica travado para o técnico. A aprovação pelo
+"Enviado" e o filtro já funciona. Apontamento aprovado fica travado para o projetista. A aprovação pelo
 gestor é a próxima fase.
 
-**Atividades padrão** (editáveis em Gestão): Instalação, Manutenção, Calibração, Documentação técnica,
-Deslocamento, Treinamento, Reunião, Outros.
+**Atividades padrão** (editáveis em Gestão), pensadas para apertadeiras e automação industrial:
+Projeto mecânico, Projeto elétrico, Programação (PLC/controlador), Integração de apertadeiras,
+Comissionamento, Instalação / start-up, Calibração, Documentação técnica, Reunião com cliente,
+Deslocamento, Treinamento, Outros. Num banco que já existia, as novas entram uma única vez, sem
+apagar as antigas (desative em Gestão as que não usar).
+
+**Perfis:** *Projetista* lança e consulta as próprias horas; *Gestor* vê tudo e administra. Na API o
+papel do projetista continua se chamando `tecnico`.
+
+**Dados de demonstração:** clientes fictícios do segmento (montadoras, máquinas agrícolas, equipamentos
+pesados). Nomes de clientes reais só com dados reais e com o aval do TI.
 
 **Lançamentos antigos** (de antes da v0.6) continuam lá, sem atividade e sem horários. Ao editar, aparecem
 pelo total de horas. O fim precisa ser no mesmo dia do início: um turno que passa da meia-noite é
@@ -45,9 +54,9 @@ registrado em dois apontamentos.
 
 ## MVP (v0.1)
 
-- Login com e-mail e senha, dois papéis: **técnico** e **gestor**
-- Técnico: lança horas e edita/apaga os próprios lançamentos
-- Gestor: tudo do técnico, mais
+- Login com e-mail e senha, dois papéis: **projetista** e **gestor**
+- Projetista: lança horas e edita/apaga os próprios lançamentos
+- Gestor: tudo do projetista, mais
   - relatórios de total de horas **por projeto** e **por funcionário**
   - cadastro de projetos (criar, ativar/desativar)
   - cadastro de usuários
@@ -217,10 +226,10 @@ Senha de todos: `demo123`
 
 | E-mail | Papel |
 |---|---|
-| `gestor@exemplo.com` | gestor |
-| `ana@exemplo.com` | técnico |
-| `bruno@exemplo.com` | técnico |
-| `carla@exemplo.com` | técnico |
+| `gestor@exemplo.com` (Marina Costa) | gestor |
+| `ana@exemplo.com` (Ana Souza) | projetista |
+| `bruno@exemplo.com` (Bruno Lima) | projetista |
+| `carla@exemplo.com` (Carla Mendes) | projetista |
 
 Para recomeçar do zero, apague `backend/timesheet.db` e rode o seed de novo.
 

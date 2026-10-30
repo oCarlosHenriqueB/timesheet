@@ -30,13 +30,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final firstName = widget.user.name.split(' ').first;
     return FutureView(
       future: data,
       onRetry: () => setState(() => data = widget.api.dashboard(today)),
       builder: (d) => PageBody(children: [
         PageHeader(
-          title: 'Olá, $firstName',
+          title: 'Olá, ${widget.user.name}',
           subtitle: toBeginningOfSentenceCase(DateFormat("EEEE, d 'de' MMMM 'de' y", 'pt_BR').format(today)),
           actions: [
             FilledButton.icon(
@@ -60,7 +59,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               label: 'Equipe na semana',
               value: formatHours(d.teamWeekHours!),
               icon: Icons.groups_outlined,
-              caption: 'Todos os técnicos',
+              caption: 'Todos os projetistas',
             )
           else
             KpiCard(

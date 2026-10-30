@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog, activities")
+            conn.execute("DROP TABLE IF EXISTS tokens, timers, entries, projects, users, sap_catalog, activities, app_meta")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -44,7 +44,7 @@ def test_tecnico_lanca_e_ve_so_os_proprios(client):
     )
     assert r.status_code == 201
     entries = client.get("/entries", headers=ana).json()
-    assert {e["user_name"] for e in entries} == {"Ana Técnica"}
+    assert {e["user_name"] for e in entries} == {"Ana Souza"}
     # all_users é ignorado para técnico
     assert client.get("/entries?all_users=true", headers=ana).json() == entries
 
@@ -183,7 +183,7 @@ def test_catalogo_sap_importa_e_busca(client):
     r = client.get("/sap/projects/prj-005", headers=gestor)
     assert r.status_code == 200
     assert r.json() == {
-        "code": "PRJ-005", "client": "Laboratório Exemplo E", "sap_wbs": "BR-PRJ-005-01",
+        "code": "PRJ-005", "client": "Fabricante de Implementos Agrícolas E", "sap_wbs": "BR-PRJ-005-01",
         "sap_sales_order": "4500001005", "budget_hours": 35.5, "due_date": "2026-11-30",
     }
     assert client.get("/sap/projects/NAO-EXISTE", headers=gestor).status_code == 404
@@ -232,7 +232,7 @@ def test_exporta_horas_csv_por_periodo(client):
         "data;projeto;pep;ordem_venda;cliente;funcionario;email;atividade;inicio;fim;intervalo_min;horas;status;descricao"
     )
     assert lines[1:] == [
-        '15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Técnica;ana@exemplo.com;;;;;2,50;enviado;Visita'
+        '15.01.2020;EXP-1;BR-EXP;;"Cliente; com ponto e vírgula";Ana Souza;ana@exemplo.com;;;;;2,50;enviado;Visita'
     ]
     assert client.get("/exports/entries.csv", headers=ana).status_code == 403
 
@@ -260,8 +260,8 @@ def test_filtro_por_periodo(client):
     assert proj["period_people"] == 1
 
     users = {u["name"]: u for u in client.get(f"/reports/by-user?{jan}", headers=gestor).json()}
-    assert users["Ana Técnica"]["total_hours"] == 5
-    assert users["Bruno Engenheiro"]["total_hours"] == 0  # aparece mesmo sem horas no período
+    assert users["Ana Souza"]["total_hours"] == 5
+    assert users["Bruno Lima"]["total_hours"] == 0  # aparece mesmo sem horas no período
 
 
 # ---------- cronômetro ----------
@@ -337,22 +337,22 @@ def test_cronometro_limites_e_descartar(client, monkeypatch):
 # ---------- v0.6: apontamento com atividade, horários e status ----------
 
 
-def activity_id(client, headers, name="Instalação"):
+def activity_id(client, headers, name="Comissionamento"):
     return next(a["id"] for a in client.get("/activities", headers=headers).json() if a["name"] == name)
 
 
 def test_atividades_padrao_e_gestao(client):
     gestor, ana = login(client, "gestor@exemplo.com"), login(client, "ana@exemplo.com")
     names = [a["name"] for a in client.get("/activities", headers=ana).json()]
-    assert {"Instalação", "Calibração", "Documentação técnica", "Outros"} <= set(names)
+    assert {"Projeto mecânico", "Integração de apertadeiras", "Comissionamento", "Calibração", "Outros"} <= set(names)
 
     assert client.post("/activities", headers=ana, json={"name": "X"}).status_code == 403
-    new = client.post("/activities", headers=gestor, json={"name": "Comissionamento"}).json()["id"]
-    assert client.post("/activities", headers=gestor, json={"name": "Comissionamento"}).status_code == 409
+    new = client.post("/activities", headers=gestor, json={"name": "Validação de torque"}).json()["id"]
+    assert client.post("/activities", headers=gestor, json={"name": "Validação de torque"}).status_code == 409
     client.patch(f"/activities/{new}", headers=gestor, json={"active": False})
-    assert "Comissionamento" not in [a["name"] for a in client.get("/activities", headers=ana).json()]
+    assert "Validação de torque" not in [a["name"] for a in client.get("/activities", headers=ana).json()]
     all_ = client.get("/activities?include_inactive=true", headers=gestor).json()
-    assert any(a["name"] == "Comissionamento" and not a["active"] for a in all_)
+    assert any(a["name"] == "Validação de torque" and not a["active"] for a in all_)
 
 
 def test_apontamento_com_inicio_fim_e_intervalo(client):
@@ -365,7 +365,7 @@ def test_apontamento_com_inicio_fim_e_intervalo(client):
     assert r.status_code == 201 and r.json()["hours"] == 4.25
     e = next(e for e in client.get("/entries", headers=ana).json() if e["id"] == r.json()["id"])
     assert (e["start_time"], e["end_time"], e["break_minutes"], e["hours"]) == ("08:00", "12:30", 15, 4.25)
-    assert (e["activity_name"], e["status"], e["project_client"]) == ("Instalação", "enviado", e["project_client"])
+    assert (e["activity_name"], e["status"]) == ("Comissionamento", "enviado")
 
     bad = [
         body | {"end_time": "07:00"},  # fim antes do início
@@ -433,14 +433,14 @@ def test_cronometro_guarda_atividade_e_horarios(client, monkeypatch):
     clock = Clock(monkeypatch)
     ana = login(client, "ana@exemplo.com")
     pid = client.get("/projects", headers=ana).json()[0]["id"]
-    aid = activity_id(client, ana, "Manutenção")
+    aid = activity_id(client, ana, "Programação (PLC/controlador)")
     t = client.post("/timer", headers=ana, json={"project_id": pid, "activity_id": aid}).json()
-    assert t["activity_name"] == "Manutenção"
+    assert t["activity_name"] == "Programação (PLC/controlador)"
     clock.advance(minutes=45)
     eid = client.post("/timer/stop", headers=ana,
                       json={"work_date": "2026-10-29", "start_time": "09:00", "end_time": "09:45"}).json()["id"]
     e = next(e for e in client.get("/entries", headers=ana).json() if e["id"] == eid)
-    assert (e["activity_name"], e["start_time"], e["end_time"], e["hours"]) == ("Manutenção", "09:00", "09:45", 0.75)
+    assert (e["activity_name"], e["start_time"], e["end_time"], e["hours"]) == ("Programação (PLC/controlador)", "09:00", "09:45", 0.75)
 
 
 def test_dashboard(client):
@@ -470,3 +470,29 @@ def test_relatorio_por_atividade(client):
         "/reports/by-activity?date_from=2018-03-01&date_to=2018-03-31", headers=gestor).json()}
     assert rows == {"Calibração": 3, "Sem atividade": 1}
     assert client.get("/reports/by-activity", headers=ana).status_code == 403
+
+
+
+def test_lista_de_atividades_v2_entra_uma_vez_sem_apagar(tmp_path, monkeypatch):
+    """Banco que já tinha a lista antiga: ganha as atividades novas uma vez; renomeadas não voltam."""
+    from app import db
+
+    if db.database_url():
+        pytest.skip("teste só para SQLite")
+    monkeypatch.setenv("TIMESHEET_DB", str(tmp_path / "v06.db"))
+    db.init_db()
+    with db.connect() as conn:  # simula o estado da v0.6: lista antiga, sem controle de versão
+        conn.execute("DELETE FROM activities")
+        conn.execute("DELETE FROM app_meta")
+        for name in ("Instalação", "Manutenção", "Calibração", "Reunião"):
+            conn.execute("INSERT INTO activities (name) VALUES (?)", (name,))
+    db.init_db()
+    with db.connect() as conn:
+        names = {r["name"] for r in conn.execute("SELECT name FROM activities")}
+        assert {"Instalação", "Manutenção", "Projeto mecânico", "Integração de apertadeiras"} <= names
+        assert sum(1 for n in names if n == "Calibração") == 1  # não duplica
+        conn.execute("UPDATE activities SET name = 'Projeto mecânico (CAD)' WHERE name = 'Projeto mecânico'")
+    db.init_db()
+    with db.connect() as conn:
+        names = {r["name"] for r in conn.execute("SELECT name FROM activities")}
+    assert "Projeto mecânico" not in names and "Projeto mecânico (CAD)" in names

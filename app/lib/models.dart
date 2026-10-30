@@ -18,7 +18,8 @@ class User {
   final bool useTimer;
 
   bool get isManager => role == 'gestor';
-  String get roleLabel => isManager ? 'Gestor' : 'Técnico';
+  /// O papel continua "tecnico" na API; nas telas, quem lança horas é o projetista.
+  String get roleLabel => isManager ? 'Gestor' : 'Projetista';
 
   User copyWith({bool? useTimer}) =>
       User(id: id, name: name, email: email, role: role, active: active, useTimer: useTimer ?? this.useTimer);
