@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 class User {
   User({
     required this.id,
@@ -46,7 +49,7 @@ class Activity {
       Activity(id: j['id'], name: j['name'], active: j['active'] ?? true);
 }
 
-/// Situação do apontamento. Nesta versão tudo nasce "enviado"; a aprovação vem na fase gerencial.
+/// Situação do apontamento. Tudo nasce "enviado"; o gestor aprova ou rejeita na tela Aprovação.
 enum EntryStatus {
   rascunho('Rascunho'),
   enviado('Enviado'),
@@ -451,4 +454,90 @@ class TeamGrid {
         days: [for (final d in j['days'] as List) DateTime.parse(d)],
         rows: [for (final r in j['rows'] as List) GridRow.fromJson(r)],
       );
+}
+
+enum ReportKind {
+  erro('Erro', 'Algo não funcionou'),
+  melhoria('Melhoria', 'Ideia ou sugestão');
+
+  const ReportKind(this.label, this.hint);
+  final String label;
+  final String hint;
+
+  static ReportKind parse(String? value) =>
+      ReportKind.values.where((k) => k.name == value).firstOrNull ?? ReportKind.erro;
+}
+
+enum ReportStatus {
+  aberto('Aberto'),
+  emAnalise('Em análise', 'em_analise'),
+  resolvido('Resolvido'),
+  recusado('Não será feito');
+
+  const ReportStatus(this.label, [this._api]);
+  final String label;
+  final String? _api;
+
+  /// Valor usado na API ("em_analise").
+  String get apiName => _api ?? name;
+
+  static ReportStatus parse(String? value) =>
+      ReportStatus.values.where((s) => s.apiName == value).firstOrNull ?? ReportStatus.aberto;
+}
+
+/// Relato de erro ou sugestão de melhoria, com os prints anexados e a resposta do gestor.
+class Report {
+  Report({
+    required this.id,
+    required this.userName,
+    required this.kind,
+    required this.title,
+    required this.createdAt,
+    this.description = '',
+    this.page = '',
+    this.device = '',
+    this.status = ReportStatus.aberto,
+    this.response = '',
+    this.imageIds = const [],
+  });
+
+  final int id;
+  final String userName;
+  final ReportKind kind;
+  final String title;
+  final String description;
+
+  /// Tela do app em que aconteceu ("Apontamento"); vazio = não informado.
+  final String page;
+
+  /// Navegador e tamanho da tela de quem enviou, preenchido pelo app.
+  final String device;
+  final ReportStatus status;
+  final String response;
+  final DateTime createdAt;
+  final List<int> imageIds;
+
+  factory Report.fromJson(Map<String, dynamic> j) => Report(
+        id: j['id'],
+        userName: j['user_name'],
+        kind: ReportKind.parse(j['kind']),
+        title: j['title'],
+        description: j['description'] ?? '',
+        page: j['page'] ?? '',
+        device: j['device'] ?? '',
+        status: ReportStatus.parse(j['status']),
+        response: j['response'] ?? '',
+        createdAt: DateTime.parse(j['created_at']).toLocal(),
+        imageIds: (j['image_ids'] as List? ?? const []).cast<int>(),
+      );
+}
+
+/// Print escolhido ou colado, antes de ir para a API.
+class PickedImage {
+  PickedImage(this.contentType, this.bytes);
+
+  final String contentType;
+  final Uint8List bytes;
+
+  Map<String, dynamic> toJson() => {'content_type': contentType, 'data': base64Encode(bytes)};
 }

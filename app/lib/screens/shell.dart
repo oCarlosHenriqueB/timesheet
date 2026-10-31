@@ -9,6 +9,7 @@ import 'help_screen.dart';
 import 'history_screen.dart';
 import 'management_screen.dart';
 import 'projects_screen.dart';
+import 'report_screen.dart';
 import 'reports_screen.dart';
 import 'timesheet_screen.dart';
 
@@ -20,6 +21,7 @@ enum AppPage {
   approval('Aprovação', Icons.fact_check_outlined, managerOnly: true),
   reports('Relatórios', Icons.bar_chart, managerOnly: true),
   management('Gestão', Icons.admin_panel_settings_outlined, managerOnly: true),
+  report('Reportar', Icons.bug_report_outlined),
   help('Ajuda', Icons.help_outline);
 
   const AppPage(this.label, this.icon, {this.managerOnly = false});
@@ -65,6 +67,10 @@ class _AppShellState extends State<AppShell> {
       AppPage.approval => ApprovalScreen(api: api),
       AppPage.reports => ReportsScreen(api: api),
       AppPage.management => ManagementScreen(api: api, user: user),
+      AppPage.report => ReportScreen(api: api, user: user, pages: [
+          for (final p in AppPage.values)
+            if (p != AppPage.report && (!p.managerOnly || user.isManager)) p.label,
+        ]),
       AppPage.help => HelpScreen(user: user),
     };
   }

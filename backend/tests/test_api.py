@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,7 +15,7 @@ def client(tmp_path, monkeypatch):
     if db.database_url():
         monkeypatch.setenv("SEED_PASSWORD", "demo123")
         with db.connect() as conn:
-            conn.execute("DROP TABLE IF EXISTS tokens, timers, project_members, entries, projects, users, sap_catalog, activities, app_meta")
+            conn.execute("DROP TABLE IF EXISTS feedback_images, feedback, tokens, timers, project_members, entries, projects, users, sap_catalog, activities, app_meta")
     seed.run()
     with TestClient(app) as c:
         yield c
@@ -672,3 +674,65 @@ def test_protecoes_do_gestor(client):
     client.patch(f"/users/{aid}", headers=gestor, json={"role": "gestor"})
     assert client.patch(f"/users/{me}", headers=gestor, json={"role": "tecnico"}).status_code == 200
     assert client.delete("/users/9999", headers=ana).status_code == 404  # a Ana agora é gestora
+
+
+PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 100).decode()
+
+
+def test_relato_com_print_e_resposta_do_gestor(client):
+    ana = login(client, "ana@exemplo.com")
+    bruno = login(client, "bruno@exemplo.com")
+    gestor = login(client, "gestor@exemplo.com")
+    body = {"kind": "erro", "title": " Botão não salva ", "description": "Cliquei e nada", "page": "Apontamento",
+            "device": "Chrome 1440x900", "images": [{"content_type": "image/png", "data": PNG}]}
+    fid = client.post("/feedback", headers=ana, json=body).json()["id"]
+    client.post("/feedback", headers=bruno, json={"kind": "melhoria", "title": "Modo escuro"})
+
+    mine = client.get("/feedback", headers=ana).json()
+    assert [f["title"] for f in mine] == ["Botão não salva"]
+    assert mine[0]["status"] == "aberto" and mine[0]["user_name"] == "Ana Souza"
+    assert mine[0]["created_at"].endswith("+00:00")
+    image_id = mine[0]["image_ids"][0]
+
+    # A imagem volta igual; só o autor e o gestor veem.
+    url = f"/feedback/{fid}/images/{image_id}"
+    r = client.get(url, headers=ana)
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content == base64.b64decode(PNG)
+    assert client.get(url, headers=gestor).status_code == 200
+    assert client.get(url, headers=bruno).status_code == 404
+
+    # Gestor vê todos, filtra, muda o status e responde; projetista não altera.
+    assert len(client.get("/feedback", headers=gestor).json()) == 2
+    assert len(client.get("/feedback?kind=melhoria", headers=gestor).json()) == 1
+    assert client.patch(f"/feedback/{fid}", headers=ana, json={"status": "resolvido"}).status_code == 403
+    client.patch(f"/feedback/{fid}", headers=gestor, json={"status": "resolvido", "response": "Corrigido na v0.9"})
+    mine = client.get("/feedback", headers=ana).json()[0]
+    assert (mine["status"], mine["response"]) == ("resolvido", "Corrigido na v0.9")
+    assert client.patch("/feedback/999999", headers=gestor, json={"status": "resolvido"}).status_code == 404
+
+
+def test_relato_recusa_imagem_invalida(client):
+    ana = login(client, "ana@exemplo.com")
+
+    def send(images):
+        return client.post("/feedback", headers=ana, json={"kind": "erro", "title": "x", "images": images})
+
+    html = base64.b64encode(b"<html><script>alert(1)</script>").decode()
+    assert send([{"content_type": "image/png", "data": html}]).status_code == 422  # não é PNG de verdade
+    assert send([{"content_type": "text/html", "data": html}]).status_code == 422
+    assert send([{"content_type": "image/png", "data": "@@@"}]).status_code == 422
+    big = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * (3 * 1024 * 1024)).decode()
+    assert send([{"content_type": "image/png", "data": big}]).status_code == 413
+    four = [{"content_type": "image/png", "data": PNG}] * 4
+    assert send(four).status_code == 422
+    assert client.get("/feedback", headers=ana).json() == []  # nada foi gravado
+
+
+def test_usuario_com_relato_e_desativado_em_vez_de_apagado(client):
+    gestor = login(client, "gestor@exemplo.com")
+    client.post("/users", headers=gestor, json={"name": "Novo", "email": "novo@exemplo.com", "password": "demo123"})
+    novo = login(client, "novo@exemplo.com")
+    client.post("/feedback", headers=novo, json={"kind": "melhoria", "title": "Ideia"})
+    uid = next(u["id"] for u in client.get("/users", headers=gestor).json() if u["email"] == "novo@exemplo.com")
+    assert client.delete(f"/users/{uid}", headers=gestor).json() == {"deleted": False, "deactivated": True}

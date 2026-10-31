@@ -64,6 +64,18 @@ Tabela com todos os seus apontamentos. Use os filtros de **período** (esta sema
 - Apontamento com status **Aprovado** fica travado: só o gestor altera.
 - Apontamento **Rejeitado** mostra um ícone ⓘ: passe o mouse para ver o motivo. Corrija com o lápis e ele volta para **Enviado**, de novo na fila do gestor.
 
+### Reportar erro ou melhoria
+
+Achou um erro ou tem uma ideia para o app? Use **Reportar**, no menu.
+
+1. Escolha **Erro** ou **Melhoria**.
+2. Escreva um **título** curto e, se quiser, em qual **tela** foi.
+3. Descreva o que aconteceu (o que você fez, o que esperava e o que apareceu) ou a sua ideia.
+4. Anexe até 3 prints: clique em **Anexar print** ou cole com **Ctrl+V** (Windows) / **Cmd+V** (Mac). Para copiar só uma parte da tela: **Windows + Shift + S** no Windows; **Cmd + Ctrl + Shift + 4** no Mac.
+5. Clique em **Enviar**.
+
+Em **Meus relatos**, abaixo do formulário, você acompanha o status (Aberto, Em análise, Resolvido, Não será feito) e lê a resposta do gestor: clique no relato para abrir.
+
 ### Projetos
 
 Consulta dos projetos que você pode ver: número, cliente, horas estimadas e realizadas, saldo e data de entrega, com as cores de alerta. O projetista só consulta; quem cria e edita é o gestor.
@@ -121,6 +133,10 @@ Horas **por projeto**, **por atividade** e **por funcionário** no período esco
 
 **Atividades**: a lista usada no apontamento. Crie, renomeie ou desative as que não usar.
 
+### Relatos da equipe
+
+Em **Reportar**, o gestor vê os relatos de todos, com quem enviou, quando e em qual tela. Clique num relato para ver a descrição, ampliar os prints e o navegador usado. Mude o **status** e escreva uma **resposta**: quem enviou vê as duas coisas. Use o filtro de status para ver só os abertos.
+
 ### Histórico da equipe
 
 No **Histórico**, o filtro **Pessoa** mostra os seus apontamentos, os de toda a equipe ou os de uma pessoa. O gestor pode corrigir qualquer apontamento, inclusive os aprovados.
@@ -152,6 +168,7 @@ Na grade da equipe, cada dia conta as horas acumuladas daquela pessoa naquele pr
 | Lancei errado | Corrija ou apague no Histórico; se estiver Aprovado, peça ao gestor |
 | Meu apontamento foi Rejeitado | Veja o motivo no ⓘ do status, no Histórico, e corrija com o lápis: ele volta para o gestor |
 | O cronômetro sumiu | Ligue Usar cronômetro no menu da conta, no canto inferior esquerdo |
+| Encontrei um erro no app | Use Reportar, com um print da tela |
 | Usuário excluído não entra mais | Está desativado; o gestor pode reativar em Gestão → Usuários |
 
 Esta é uma versão de teste, com dados fictícios. Dados reais da empresa só depois do aval do TI. A conexão direta com o SAP ainda está em desenvolvimento.

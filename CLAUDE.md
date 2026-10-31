@@ -27,8 +27,8 @@ e `curl https://timesheet-api-xp0u.onrender.com/openapi.json` (rota nova aparece
 cd backend && .venv/bin/python -m app.seed      # banco local com dados fictícios (senha demo123)
 cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
 cd app && flutter run -d chrome                  # ou flutter build web + servir app/build/web
-cd backend && .venv/bin/pytest                   # 38 testes
-cd app && flutter analyze && flutter test        # 35 testes
+cd backend && .venv/bin/pytest                   # 41 testes
+cd app && flutter analyze && flutter test        # 36 testes
 ```
 
 - Testes da API também no Postgres: `DATABASE_URL=postgresql://... .venv/bin/pytest` (apaga as tabelas: só banco de teste).
@@ -44,7 +44,8 @@ cd app && flutter analyze && flutter test        # 35 testes
   `_seed_activities` acrescenta atividades padrão uma vez por `ACTIVITIES_VERSION`); `sap.py` integração SAP;
   `seed.py` dados fictícios.
 - `app/lib/screens/` uma tela por arquivo + `shell.dart` (menu lateral); `widgets/` componentes reutilizáveis;
-  `dialogs/` janelas; `api.dart` todas as chamadas; `models.dart`; `budget.dart` regras de cor; `period.dart`.
+  `dialogs/` janelas; `api.dart` todas as chamadas; `models.dart`; `budget.dart` regras de cor; `period.dart`;
+  `pick_image.dart` e `download.dart` usam `package:web` (só rodam no navegador: não importar em testes).
 - Regra: **toda regra de negócio fica na API**; o app só calcula o que mostra enquanto a pessoa digita.
 - Manual de uso: `app/assets/MANUAL.md`, exibido na tela **Ajuda** (projetista não vê a seção 3, do gestor).
   Mudou funcionalidade visível → atualizar o manual e a seção do README.
@@ -61,7 +62,10 @@ cd app && flutter analyze && flutter test        # 35 testes
   atrasado vermelho; vale a pior. Grade da equipe colore cada dia pelo acumulado da pessoa no projeto.
 - Equipe do projeto: projeto com membros só aceita horas deles; sem membros = aberto a todos.
   Cada membro tem horas previstas e prazo próprios (prazo vazio = entrega do projeto).
-- Excluir usuário: sem horas → apaga; com horas → desativa (histórico preservado). Nunca sem gestor ativo.
+- Excluir usuário: sem horas nem relatos → apaga; com horas ou relatos → desativa (histórico preservado).
+  Nunca sem gestor ativo.
+- Relatos (tela Reportar): erro ou melhoria, até 3 prints de 3 MB guardados no banco em base64 (Render sem disco);
+  o app reduz prints grandes; status aberto/em_analise/resolvido/recusado; só o gestor muda status e responde.
 - Ao criar usuário/redefinir senha, o app mostra os dados de acesso para copiar (evita senha digitada errado).
 - **Clientes reais (Caterpillar, John Deere, VW...) nunca no repositório público**: demo usa nomes fictícios.
   Sem logo/marca oficial da Atlas Copco (espaço reservado no menu e no login).

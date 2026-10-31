@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timesheet/format.dart';
 import 'package:timesheet/models.dart';
@@ -24,6 +26,19 @@ void main() {
     expect(e.reviewerName, 'Marina');
     final old = {'id': 1, 'user_name': 'Ana', 'project_id': 2, 'project_code': 'P', 'work_date': '2026-10-05', 'hours': 1};
     expect(Entry.fromJson(old).reviewNote, ''); // API antiga, sem os campos novos
+  });
+
+  test('Report lê status com nome da API, prints e data em UTC', () {
+    final r = Report.fromJson({
+      'id': 3, 'user_name': 'Ana', 'kind': 'melhoria', 'title': 'Modo escuro', 'status': 'em_analise',
+      'created_at': '2026-10-30T15:00:00+00:00', 'image_ids': [7, 8],
+    });
+    expect(r.kind, ReportKind.melhoria);
+    expect(r.status, ReportStatus.emAnalise);
+    expect(r.status.apiName, 'em_analise');
+    expect(r.imageIds, [7, 8]);
+    expect(r.createdAt.toUtc(), DateTime.utc(2026, 10, 30, 15));
+    expect(PickedImage('image/png', Uint8List.fromList([1, 2, 3])).toJson()['data'], 'AQID');
   });
 
   test('EntryDraft envia só a data, sem hora', () {

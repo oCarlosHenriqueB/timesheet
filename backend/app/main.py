@@ -1,5 +1,7 @@
 """API do Timesheet: login, projetos, usuários, lançamentos de horas e relatórios."""
 
+import base64
+import binascii
 import datetime as dt
 import os
 from contextlib import asynccontextmanager
@@ -352,8 +354,12 @@ def delete_user(user_id: int, me: dict = Depends(manager)):
         if row["role"] == "gestor" and row["active"] and _other_active_managers(conn, user_id) == 0:
             raise HTTPException(status.HTTP_409_CONFLICT, "É preciso ter pelo menos um gestor ativo.")
         _revoke_access(conn, user_id)
-        has_entries = conn.execute("SELECT 1 FROM entries WHERE user_id = ? LIMIT 1", (user_id,)).fetchone()
-        if has_entries:
+        has_history = conn.execute(
+            """SELECT 1 FROM entries WHERE user_id = ?
+               UNION ALL SELECT 1 FROM feedback WHERE user_id = ? LIMIT 1""",
+            (user_id, user_id),
+        ).fetchone()
+        if has_history:  # horas lançadas ou relatos enviados
             conn.execute("UPDATE users SET active = 0 WHERE id = ?", (user_id,))
             return {"deleted": False, "deactivated": True}
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -657,6 +663,140 @@ def delete_entry(entry_id: int, user: dict = Depends(current_user)):
         conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
 
 
+
+
+# ---------- relatos (erros e melhorias) ----------
+
+FEEDBACK_STATUSES = ("aberto", "em_analise", "resolvido", "recusado")
+MAX_IMAGES = 3
+MAX_IMAGE_BYTES = 3 * 1024 * 1024
+# Tipos aceitos e o começo do arquivo de cada um, para não aceitar outra coisa com nome de imagem.
+IMAGE_SIGNATURES = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+
+
+class ImageIn(BaseModel):
+    content_type: str
+    data: str  # base64
+
+
+class FeedbackIn(BaseModel):
+    kind: Literal["erro", "melhoria"]
+    title: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4000)
+    page: str = Field(default="", max_length=60)  # tela em que aconteceu
+    device: str = Field(default="", max_length=300)  # navegador e tamanho da tela, preenchido pelo app
+    images: list[ImageIn] = Field(default=[], max_length=MAX_IMAGES)
+
+
+class FeedbackPatch(BaseModel):
+    status: Literal[FEEDBACK_STATUSES] | None = None
+    response: str | None = Field(default=None, max_length=4000)
+
+
+def _decode_image(img: ImageIn) -> str:
+    """Confere tipo, conteúdo e tamanho do print; devolve o base64 limpo."""
+    signatures = IMAGE_SIGNATURES.get(img.content_type)
+    if signatures is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Envie imagens PNG, JPG, GIF ou WEBP.")
+    try:
+        raw = base64.b64decode(img.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Imagem inválida.")
+    if not raw.startswith(signatures) or (img.content_type == "image/webp" and raw[8:12] != b"WEBP"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "O arquivo não é uma imagem válida.")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Cada imagem pode ter no máximo 3 MB.")
+    return base64.b64encode(raw).decode()
+
+
+def _utc_text(value) -> str:
+    """created_at vem como texto UTC no SQLite e como datetime no Postgres; devolve ISO com fuso."""
+    if isinstance(value, dt.datetime):
+        return value.astimezone(dt.UTC).isoformat(timespec="seconds")
+    return str(value).replace(" ", "T") + "+00:00"
+
+
+@app.post("/feedback", status_code=201)
+def create_feedback(body: FeedbackIn, user: dict = Depends(current_user)):
+    images = [(img.content_type, _decode_image(img)) for img in body.images]
+    with connect() as conn:
+        new_id = conn.execute(
+            """INSERT INTO feedback (user_id, kind, title, description, page, device)
+               VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
+            (user["id"], body.kind, body.title.strip(), body.description.strip(), body.page, body.device),
+        ).fetchone()["id"]
+        for content_type, data in images:
+            conn.execute(
+                "INSERT INTO feedback_images (feedback_id, content_type, data) VALUES (?, ?, ?)",
+                (new_id, content_type, data),
+            )
+    return {"id": new_id}
+
+
+@app.get("/feedback")
+def list_feedback(
+    status_: Literal[FEEDBACK_STATUSES] | None = Query(default=None, alias="status"),
+    kind: Literal["erro", "melhoria"] | None = None,
+    user: dict = Depends(current_user),
+):
+    """Projetista vê os próprios relatos; gestor vê os de todos."""
+    where, params = "", []
+    if user["role"] != "gestor":
+        where += " AND f.user_id = ?"
+        params.append(user["id"])
+    for column, value in (("f.status", status_), ("f.kind", kind)):
+        if value is not None:
+            where += f" AND {column} = ?"
+            params.append(value)
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT f.id, f.user_id, u.name AS user_name, f.kind, f.title, f.description, f.page, f.device,
+                      f.status, f.response, f.created_at
+               FROM feedback f JOIN users u ON u.id = f.user_id
+               WHERE 1 = 1""" + where + " ORDER BY f.id DESC",
+            tuple(params),
+        ).fetchall()
+        images: dict[int, list[int]] = {}
+        for r in conn.execute("SELECT id, feedback_id FROM feedback_images ORDER BY id"):
+            images.setdefault(r["feedback_id"], []).append(r["id"])
+    return [dict(r) | {"created_at": _utc_text(r["created_at"]), "image_ids": images.get(r["id"], [])}
+            for r in rows]
+
+
+@app.get("/feedback/{feedback_id}/images/{image_id}")
+def feedback_image(feedback_id: int, image_id: int, user: dict = Depends(current_user)):
+    with connect() as conn:
+        row = conn.execute(
+            """SELECT i.content_type, i.data, f.user_id FROM feedback_images i
+               JOIN feedback f ON f.id = i.feedback_id
+               WHERE i.id = ? AND i.feedback_id = ?""",
+            (image_id, feedback_id),
+        ).fetchone()
+    if row is None or (user["role"] != "gestor" and row["user_id"] != user["id"]):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Imagem não encontrada.")
+    return Response(
+        base64.b64decode(row["data"]),
+        media_type=row["content_type"],
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"},
+    )
+
+
+@app.patch("/feedback/{feedback_id}")
+def update_feedback(feedback_id: int, body: FeedbackPatch, user: dict = Depends(manager)):
+    """Gestor muda o status e escreve a resposta que o autor vê."""
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM feedback WHERE id = ?", (feedback_id,)).fetchone() is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Relato não encontrado.")
+        if body.status is not None:
+            conn.execute("UPDATE feedback SET status = ? WHERE id = ?", (body.status, feedback_id))
+        if body.response is not None:
+            conn.execute("UPDATE feedback SET response = ? WHERE id = ?", (body.response.strip(), feedback_id))
+    return {"ok": True}
 
 # ---------- cronômetro ----------
 

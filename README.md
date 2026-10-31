@@ -20,6 +20,20 @@ gasta em cada projeto. Projetistas lançam horas; gestores veem os totais por pr
 | Acesso | Login com e-mail e senha; aprovação de horas pelo gestor (desde a v0.8) |
 | Uso | Portfólio agora, pensado para uso interno depois |
 
+## v0.9: relatar erros e sugerir melhorias
+
+**Tela Reportar (todos),** no menu. A pessoa escolhe **Erro** ou **Melhoria**, escreve título e descrição,
+diz em qual tela foi e anexa até **3 prints** (botão ou **Ctrl+V / Cmd+V** para colar). O app junta o
+navegador e o tamanho da janela, para ajudar a reproduzir o erro.
+- Projetista vê os próprios relatos, o status e a resposta do gestor.
+- Gestor vê os de todos, amplia os prints, muda o status (Aberto, Em análise, Resolvido, Não será feito) e responde.
+- Prints acima de ~1,5 MB são reduzidos no navegador (até 1920 px, JPEG). A API aceita PNG, JPG, GIF e WEBP de
+  até 3 MB, confere se o arquivo é mesmo uma imagem e guarda no banco em base64 (o Render gratuito não tem disco
+  permanente).
+- Usuário que enviou relato é desativado em vez de apagado, como quem lançou horas.
+
+API: `POST /feedback`, `GET /feedback?status=&kind=`, `GET /feedback/{id}/images/{image_id}`, `PATCH /feedback/{id}`.
+
 ## v0.8: aprovação de horas
 
 **Tela Aprovação (gestor),** no grupo Gestão do menu. Abre na fila **Aguardando aprovação** (status
@@ -344,6 +358,9 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 | GET / POST | `/entries` (filtros: `date_from`, `date_to`, `project_id`, `activity_id`, `status`; gestor: `all_users`, `user_id`) | logado |
 | PUT / DELETE | `/entries/{id}` | dono ou gestor |
 | POST | `/entries/review` (aprovar, rejeitar com motivo, reabrir) | gestor |
+| GET / POST | `/feedback` (relatos; projetista vê os dele) | logado |
+| GET | `/feedback/{id}/images/{image_id}` | autor ou gestor |
+| PATCH | `/feedback/{id}` (status e resposta) | gestor |
 | GET | `/reports/by-project`, `/reports/by-activity`, `/reports/by-user` | gestor |
 | GET | `/dashboard?today=aaaa-mm-dd` | logado |
 | GET / POST / PATCH | `/activities`, `/activities/{id}` | leitura: logado; alteração: gestor |

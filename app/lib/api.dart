@@ -201,6 +201,48 @@ class Api {
     return (data['imported'] as int, (data['errors'] as List).cast<String>());
   }
 
+  /// Relatos de erro/melhoria: o projetista recebe os dele; o gestor, os de todos.
+  Future<List<Report>> reports({ReportStatus? status, ReportKind? kind}) async {
+    final params = {if (status != null) 'status': status.apiName, if (kind != null) 'kind': kind.name};
+    final data = await _send('GET', '/feedback${_qs(params)}') as List;
+    return data.map((j) => Report.fromJson(j)).toList();
+  }
+
+  Future<void> sendReport({
+    required ReportKind kind,
+    required String title,
+    String description = '',
+    String page = '',
+    String device = '',
+    List<PickedImage> images = const [],
+  }) =>
+      _send('POST', '/feedback', {
+        'kind': kind.name,
+        'title': title,
+        'description': description,
+        'page': page,
+        'device': device,
+        'images': [for (final i in images) i.toJson()],
+      });
+
+  /// Gestor muda o status e/ou responde.
+  Future<void> updateReport(int id, {ReportStatus? status, String? response}) => _send('PATCH', '/feedback/$id', {
+        if (status != null) 'status': status.apiName,
+        'response': ?response,
+      });
+
+  /// Bytes de um print anexado (a rota exige login, por isso não dá para usar só a URL).
+  Future<Uint8List> reportImage(int reportId, int imageId) async {
+    final http.Response res;
+    try {
+      res = await http.get(Uri.parse('$apiUrl/feedback/$reportId/images/$imageId'), headers: _headers);
+    } catch (_) {
+      throw ApiException('Não foi possível falar com a API em $apiUrl. Ela está rodando?');
+    }
+    if (res.statusCode >= 400) throw ApiException('Erro ${res.statusCode} ao abrir a imagem.', res.statusCode);
+    return res.bodyBytes;
+  }
+
   /// Lançamentos do período em CSV (layout próximo ao CATS do SAP).
   Future<Uint8List> exportEntriesCsv({Period? period}) async {
     final uri = Uri.parse('$apiUrl/exports/entries.csv${_qs({...?period?.query})}');

@@ -88,6 +88,28 @@ CREATE TABLE IF NOT EXISTS sap_catalog (
     due_date        TEXT,
     imported_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Relatos de erro ou sugestão de melhoria enviados pelos usuários. O gestor muda o status e responde.
+CREATE TABLE IF NOT EXISTS feedback (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    kind        TEXT NOT NULL CHECK (kind IN ('erro', 'melhoria')),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    page        TEXT NOT NULL DEFAULT '',
+    device      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'aberto',
+    response    TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Prints anexados aos relatos (até 3 por relato), em base64: o Render gratuito não tem disco permanente.
+CREATE TABLE IF NOT EXISTS feedback_images (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    feedback_id  INTEGER NOT NULL REFERENCES feedback(id),
+    content_type TEXT NOT NULL,
+    data         TEXT NOT NULL
+);
 """
 
 POSTGRES_SCHEMA = (
