@@ -13,7 +13,7 @@ import '../widgets/password_field.dart';
 import '../widgets/team_grid.dart';
 
 /// Área do gestor: acompanhamento da equipe, usuários e atividades.
-/// A aprovação de horas entra aqui na fase gerencial.
+/// A aprovação de horas fica na tela Aprovação.
 class ManagementScreen extends StatefulWidget {
   const ManagementScreen({super.key, required this.api, required this.user});
 

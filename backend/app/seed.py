@@ -93,6 +93,7 @@ def run() -> None:
         for uid in tech_ids:
             projects_of.setdefault(uid, []).append(project_by_code["INT-001"])
         activity_ids = [r["id"] for r in conn.execute("SELECT id FROM activities WHERE name <> 'Outros'")]
+        manager_id = user_by_email["gestor@exemplo.com"]
         for days_ago in range(14):
             day = today - dt.timedelta(days=days_ago)
             if day.weekday() >= 5:
@@ -102,12 +103,15 @@ def run() -> None:
                 blocks = [("08:00", "12:00", 0)] + ([("13:00", "17:15", 15)] if rng.random() < 0.6 else [])
                 for start, end, pause in blocks:
                     h = (int(end[:2]) * 60 + int(end[3:]) - int(start[:2]) * 60 - int(start[3:]) - pause) / 60
+                    # A semana anterior já foi aprovada pelo gestor; a atual aguarda aprovação.
+                    approved = days_ago >= 7
                     conn.execute(
                         """INSERT INTO entries (user_id, project_id, activity_id, work_date, start_time, end_time,
-                                                break_minutes, hours, description)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                                break_minutes, hours, description, status, reviewed_by)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (uid, rng.choice(projects_of[uid]), rng.choice(activity_ids), day.isoformat(),
-                         start, end, pause, h, rng.choice(DESCRIPTIONS)),
+                         start, end, pause, h, rng.choice(DESCRIPTIONS),
+                         "aprovado" if approved else "enviado", manager_id if approved else None),
                     )
     print(f"Dados de demonstração criados. Senha de todos: {DEMO_PASSWORD}")
 

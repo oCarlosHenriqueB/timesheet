@@ -17,8 +17,21 @@ gasta em cada projeto. Projetistas lançam horas; gestores veem os totais por pr
 | Plataforma | Web responsiva (PC e navegador do celular) |
 | Lançamento | Manual: projeto, data, horas e descrição |
 | Relatórios | Total por projeto e total por funcionário |
-| Acesso | Login com e-mail e senha; sem aprovação de horas |
+| Acesso | Login com e-mail e senha; aprovação de horas pelo gestor (desde a v0.8) |
 | Uso | Portfólio agora, pensado para uso interno depois |
+
+## v0.8: aprovação de horas
+
+**Tela Aprovação (gestor),** no grupo Gestão do menu. Abre na fila **Aguardando aprovação** (status
+`enviado`, de qualquer data), com filtros de período, pessoa e projeto.
+- Aprova ou rejeita um apontamento pelos ícones da linha, ou vários marcando as caixas.
+- Rejeitar pede um motivo (opcional), que o projetista vê no **Histórico** (ícone ⓘ no status).
+- **Reabrir** devolve um aprovado ou rejeitado para a fila.
+- Aprovado fica travado para o projetista (como antes). Rejeitado volta para `enviado` quando o projetista corrige.
+- O banco guarda quem revisou e quando (`reviewed_by`, `reviewed_at`) e o motivo (`review_note`).
+- Dados de demonstração: a semana anterior vem aprovada; a atual, aguardando aprovação.
+
+API: `POST /entries/review` com `{"ids": [...], "status": "aprovado" | "rejeitado" | "enviado", "note": "..."}`.
 
 ## v0.7: equipe do projeto e grade de acompanhamento
 
@@ -330,6 +343,7 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 | GET / POST | `/users` | gestor |
 | GET / POST | `/entries` (filtros: `date_from`, `date_to`, `project_id`, `activity_id`, `status`; gestor: `all_users`, `user_id`) | logado |
 | PUT / DELETE | `/entries/{id}` | dono ou gestor |
+| POST | `/entries/review` (aprovar, rejeitar com motivo, reabrir) | gestor |
 | GET | `/reports/by-project`, `/reports/by-activity`, `/reports/by-user` | gestor |
 | GET | `/dashboard?today=aaaa-mm-dd` | logado |
 | GET / POST / PATCH | `/activities`, `/activities/{id}` | leitura: logado; alteração: gestor |
@@ -339,7 +353,7 @@ cd backend && DATABASE_URL=postgresql://... .venv/bin/pytest
 
 1. ~~Filtro por período (semana/mês) nos lançamentos e relatórios~~ (feito na v0.4)
 2. ~~Exportar CSV/Excel~~ (feito na v0.3)
-3. Aprovação de horas pelo gestor (a estrutura de status já existe; falta a tela em Gestão)
+3. ~~Aprovação de horas pelo gestor~~ (feito na v0.8)
 4. ~~Cronômetro por projeto~~ (feito na v0.5)
 5. Para uso interno de verdade: expiração de token, troca de senha,
    hospedagem aprovada pela TI e política de dados (LGPD)

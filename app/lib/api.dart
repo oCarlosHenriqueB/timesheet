@@ -152,6 +152,10 @@ class Api {
 
   Future<void> deleteEntry(int id) => _send('DELETE', '/entries/$id');
 
+  /// Gestor aprova, rejeita (com motivo) ou reabre ([EntryStatus.enviado]) vários apontamentos.
+  Future<void> reviewEntries(List<int> ids, EntryStatus status, {String note = ''}) =>
+      _send('POST', '/entries/review', {'ids': ids, 'status': status.name, 'note': note});
+
   /// Cronômetro em andamento, ou null.
   Future<RunningTimer?> timer() async {
     final data = await _send('GET', '/timer');

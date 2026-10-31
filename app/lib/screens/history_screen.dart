@@ -175,7 +175,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 DataCell(Text(e.endTime ?? '—')),
                                 DataCell(Text(e.startTime == null ? '—' : '${e.breakMinutes} min')),
                                 DataCell(Text(formatNumber(e.hours), style: const TextStyle(fontWeight: FontWeight.w600))),
-                                DataCell(StatusChip(e.status)),
+                                DataCell(StatusChip(e.status, note: e.reviewNote)),
                                 DataCell(SizedBox(
                                   width: 200,
                                   child: Text(e.description, overflow: TextOverflow.ellipsis, maxLines: 2),

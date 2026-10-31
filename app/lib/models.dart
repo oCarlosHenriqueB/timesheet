@@ -211,6 +211,8 @@ class Entry {
     this.description = '',
     this.status = EntryStatus.enviado,
     this.projectName = '',
+    this.reviewNote = '',
+    this.reviewerName,
   });
 
   final int id;
@@ -230,6 +232,10 @@ class Entry {
   final double hours;
   final String description;
   final EntryStatus status;
+
+  /// Motivo da rejeição (vazio nos demais status) e quem aprovou/rejeitou.
+  final String reviewNote;
+  final String? reviewerName;
 
   String get projectLabel => '$projectCode · ${projectClient.isNotEmpty ? projectClient : projectName}';
   String get timeRange => startTime == null ? '—' : '$startTime – $endTime';
@@ -251,6 +257,8 @@ class Entry {
         hours: (j['hours'] as num).toDouble(),
         description: j['description'] ?? '',
         status: EntryStatus.parse(j['status']),
+        reviewNote: j['review_note'] ?? '',
+        reviewerName: j['reviewer_name'],
       );
 }
 

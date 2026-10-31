@@ -413,10 +413,45 @@ def test_apontamento_aprovado_fica_travado(client):
     pid = client.get("/projects", headers=ana).json()[0]["id"]
     body = {"project_id": pid, "work_date": "2026-10-29", "hours": 1}
     eid = client.post("/entries", headers=ana, json=body).json()["id"]
-    with connect() as conn:  # aprovação ainda não tem tela; simula direto no banco
-        conn.execute("UPDATE entries SET status = 'aprovado' WHERE id = ?", (eid,))
+    gestor = login(client, "gestor@exemplo.com")
+    assert client.post("/entries/review", headers=gestor, json={"ids": [eid], "status": "aprovado"}).status_code == 200
     assert client.put(f"/entries/{eid}", headers=ana, json=body).status_code == 409
     assert client.delete(f"/entries/{eid}", headers=ana).status_code == 409
+
+
+def test_gestor_aprova_rejeita_e_reabre(client):
+    ana = login(client, "ana@exemplo.com")
+    gestor = login(client, "gestor@exemplo.com")
+    pid = client.get("/projects", headers=ana).json()[0]["id"]
+    body = {"project_id": pid, "work_date": "2025-01-06", "hours": 2}
+    a = client.post("/entries", headers=ana, json=body).json()["id"]
+    b = client.post("/entries", headers=ana, json=body).json()["id"]
+
+    # Só gestor revisa; ids inexistentes e lista vazia são recusados.
+    assert client.post("/entries/review", headers=ana, json={"ids": [a], "status": "aprovado"}).status_code == 403
+    assert client.post("/entries/review", headers=gestor, json={"ids": [a, 999999], "status": "aprovado"}).status_code == 404
+    assert client.post("/entries/review", headers=gestor, json={"ids": [], "status": "aprovado"}).status_code == 422
+    assert client.post("/entries/review", headers=gestor, json={"ids": [a], "status": "rascunho"}).status_code == 422
+
+    r = client.post("/entries/review", headers=gestor, json={"ids": [a, b], "status": "rejeitado", "note": " Faltou a OS "})
+    assert r.json() == {"updated": 2}
+    entries = {e["id"]: e for e in client.get("/entries?date_from=2025-01-06&date_to=2025-01-06", headers=ana).json()}
+    assert entries[a]["status"] == "rejeitado"
+    assert entries[a]["review_note"] == "Faltou a OS"
+    assert entries[a]["reviewer_name"] == "Marina Costa"
+    assert entries[a]["reviewed_at"]
+
+    # O projetista corrige o rejeitado e ele volta para a fila de aprovação.
+    assert client.put(f"/entries/{a}", headers=ana, json=body | {"description": "OS 123"}).status_code == 200
+    sent = client.get("/entries?status=enviado&date_from=2025-01-06&date_to=2025-01-06", headers=ana).json()
+    assert [e["id"] for e in sent] == [a]
+
+    # Aprovar limpa o motivo; reabrir devolve para "enviado" e destrava.
+    client.post("/entries/review", headers=gestor, json={"ids": [b], "status": "aprovado", "note": "ignorado"})
+    entry_b = next(e for e in client.get("/entries?status=aprovado&date_from=2025-01-06&date_to=2025-01-06", headers=ana).json() if e["id"] == b)
+    assert entry_b["review_note"] == ""
+    client.post("/entries/review", headers=gestor, json={"ids": [b], "status": "enviado"})
+    assert client.delete(f"/entries/{b}", headers=ana).status_code == 204
 
 
 def test_preferencia_do_cronometro_por_pessoa(client):

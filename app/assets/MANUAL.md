@@ -60,7 +60,9 @@ Tabela com todos os seus apontamentos. Use os filtros de **período** (esta sema
 
 - **Editar**: corrige projeto, atividade, data, horários e descrição.
 - **Apagar**: remove o apontamento, depois de confirmar.
+- Todo apontamento nasce **Enviado** e espera a aprovação do gestor.
 - Apontamento com status **Aprovado** fica travado: só o gestor altera.
+- Apontamento **Rejeitado** mostra um ícone ⓘ: passe o mouse para ver o motivo. Corrija com o lápis e ele volta para **Enviado**, de novo na fila do gestor.
 
 ### Projetos
 
@@ -68,7 +70,7 @@ Consulta dos projetos que você pode ver: número, cliente, horas estimadas e re
 
 ## 3. Para o gestor
 
-O gestor vê no menu, além das telas do projetista, a seção **Gestão** com Relatórios e Gestão. No Dashboard aparece também a grade de acompanhamento da equipe.
+O gestor vê no menu, além das telas do projetista, a seção **Gestão** com Aprovação, Relatórios e Gestão. No Dashboard aparece também a grade de acompanhamento da equipe.
 
 ### Projetos: criar e editar
 
@@ -90,6 +92,17 @@ Projeto com equipe só aceita horas dos alocados. Projeto sem ninguém alocado f
 ### Catálogo SAP
 
 Em **Projetos → Catálogo SAP**, cole a lista de projetos exportada do SAP para o Excel, com o cabeçalho. Colunas: projeto; cliente; pep; ordem_venda; horas_previstas; data_entrega (obrigatórias: projeto e cliente). Depois disso, o ícone de nuvem no cadastro preenche os dados.
+
+### Aprovação
+
+A tela abre com a fila **Aguardando aprovação**: os apontamentos enviados pela equipe, de qualquer data.
+
+1. Filtre por **período**, **pessoa** ou **projeto**, se quiser.
+2. Para um apontamento só, use os ícones no início da linha: ✓ verde **aprova**, ✗ vermelho **rejeita**.
+3. Para vários de uma vez, marque as caixas à esquerda (a do cabeçalho marca todos) e clique em **Aprovar** ou **Rejeitar**, no alto da tabela (os botões ficam ativos quando há algo marcado). O título mostra quantos estão marcados e o total de horas.
+4. Ao rejeitar, escreva o **motivo** (opcional). O projetista vê o motivo no Histórico.
+
+Aprovado fica travado para o projetista. Rejeitado volta sozinho para a fila quando o projetista corrige. Troque o filtro **Status** para ver os aprovados ou rejeitados; **Reabrir** devolve um deles para "Aguardando aprovação".
 
 ### Relatórios
 
@@ -137,7 +150,8 @@ Na grade da equipe, cada dia conta as horas acumuladas daquela pessoa naquele pr
 | O botão Registrar não funciona | Confira projeto, atividade e horários; o fim precisa ser depois do início |
 | Esqueci a senha | O gestor redefine em Gestão → Usuários |
 | Lancei errado | Corrija ou apague no Histórico; se estiver Aprovado, peça ao gestor |
+| Meu apontamento foi Rejeitado | Veja o motivo no ⓘ do status, no Histórico, e corrija com o lápis: ele volta para o gestor |
 | O cronômetro sumiu | Ligue Usar cronômetro no menu da conta, no canto inferior esquerdo |
 | Usuário excluído não entra mais | Está desativado; o gestor pode reativar em Gestão → Usuários |
 
-Esta é uma versão de teste, com dados fictícios. Dados reais da empresa só depois do aval do TI. A aprovação de horas pelo gestor e a conexão direta com o SAP ainda estão em desenvolvimento.
+Esta é uma versão de teste, com dados fictícios. Dados reais da empresa só depois do aval do TI. A conexão direta com o SAP ainda está em desenvolvimento.

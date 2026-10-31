@@ -143,11 +143,12 @@ class ResponsiveRow extends StatelessWidget {
   }
 }
 
-/// Selo do status do apontamento.
+/// Selo do status do apontamento. Rejeitado com motivo mostra um ícone e o motivo ao passar o mouse.
 class StatusChip extends StatelessWidget {
-  const StatusChip(this.status, {super.key});
+  const StatusChip(this.status, {super.key, this.note = ''});
 
   final EntryStatus status;
+  final String note;
 
   @override
   Widget build(BuildContext context) {
@@ -157,11 +158,16 @@ class StatusChip extends StatelessWidget {
       EntryStatus.aprovado => const Color(0xFF2E7D32),
       EntryStatus.rejeitado => const Color(0xFFC62828),
     };
-    return Container(
+    final showNote = status == EntryStatus.rejeitado && note.isNotEmpty;
+    final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-      child: Text(status.label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(status.label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        if (showNote) ...[const SizedBox(width: 4), Icon(Icons.info_outline, size: 14, color: color)],
+      ]),
     );
+    return showNote ? Tooltip(message: 'Motivo: $note', child: chip) : chip;
   }
 }
 

@@ -27,8 +27,8 @@ e `curl https://timesheet-api-xp0u.onrender.com/openapi.json` (rota nova aparece
 cd backend && .venv/bin/python -m app.seed      # banco local com dados fictícios (senha demo123)
 cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
 cd app && flutter run -d chrome                  # ou flutter build web + servir app/build/web
-cd backend && .venv/bin/pytest                   # 37 testes
-cd app && flutter analyze && flutter test        # 34 testes
+cd backend && .venv/bin/pytest                   # 38 testes
+cd app && flutter analyze && flutter test        # 35 testes
 ```
 
 - Testes da API também no Postgres: `DATABASE_URL=postgresql://... .venv/bin/pytest` (apaga as tabelas: só banco de teste).
@@ -54,6 +54,8 @@ cd app && flutter analyze && flutter test        # 34 testes
 - Perfis: gestor e projetista. Na API o papel do projetista chama `tecnico`; nas telas, **"Projetista"**.
 - Apontamento por **início, fim e intervalo** (horas calculadas na API); lançamentos antigos só com total.
   Status: rascunho/enviado/aprovado/rejeitado; tudo nasce `enviado`; aprovado trava para o projetista.
+- Aprovação: tela própria (menu Gestão → Aprovação), `POST /entries/review` em lote; rejeitar tem motivo opcional;
+  projetista corrige o rejeitado e ele volta a `enviado`; "Reabrir" devolve aprovado/rejeitado para `enviado`.
 - Cronômetro opcional por pessoa (`use_timer`, menu da conta), guardado no servidor, 1 por pessoa, 1 min–24 h.
 - Cores: horas usadas ≤70% verde, 70–90% amarelo, >90% vermelho, >100% roxo; prazo ≤7 dias amarelo,
   atrasado vermelho; vale a pior. Grade da equipe colore cada dia pelo acumulado da pessoa no projeto.
@@ -67,7 +69,6 @@ cd app && flutter analyze && flutter test        # 34 testes
 
 ## Pendências
 
-- [ ] Aprovação de horas pelo gestor (status já existe; falta a tela em Gestão).
 - [ ] Conexão direta com SAP (`SAP_PROVIDER=odata` responde 501; depende do TI: perguntas no README).
 - [ ] Para uso real: troca de senha pelo próprio usuário, expiração de sessão, hospedagem interna, LGPD.
 - [ ] README do perfil GitHub (repo oCarlosHenriqueB/oCarlosHenriqueB) ainda mostra o Orbis como projeto atual.

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../models.dart';
 import '../theme.dart';
+import 'approval_screen.dart';
 import 'dashboard_screen.dart';
 import 'help_screen.dart';
 import 'history_screen.dart';
@@ -16,6 +17,7 @@ enum AppPage {
   timesheet('Apontamento', Icons.more_time),
   history('Histórico', Icons.history),
   projects('Projetos', Icons.folder_outlined),
+  approval('Aprovação', Icons.fact_check_outlined, managerOnly: true),
   reports('Relatórios', Icons.bar_chart, managerOnly: true),
   management('Gestão', Icons.admin_panel_settings_outlined, managerOnly: true),
   help('Ajuda', Icons.help_outline);
@@ -60,6 +62,7 @@ class _AppShellState extends State<AppShell> {
       AppPage.timesheet => TimesheetScreen(api: api, user: user),
       AppPage.history => HistoryScreen(api: api, user: user),
       AppPage.projects => ProjectsScreen(api: api, user: user),
+      AppPage.approval => ApprovalScreen(api: api),
       AppPage.reports => ReportsScreen(api: api),
       AppPage.management => ManagementScreen(api: api, user: user),
       AppPage.help => HelpScreen(user: user),

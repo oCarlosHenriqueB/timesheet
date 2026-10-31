@@ -134,6 +134,14 @@ class EntryIn(BaseModel):
         return self
 
 
+class ReviewIn(BaseModel):
+    """Aprovar, rejeitar ou reabrir (voltar para "enviado") vários apontamentos de uma vez."""
+
+    ids: list[int] = Field(min_length=1, max_length=500)
+    status: Literal["aprovado", "rejeitado", "enviado"]
+    note: str = ""  # motivo, usado na rejeição
+
+
 # ---------- autenticação ----------
 
 
@@ -484,11 +492,13 @@ def update_project(project_id: int, body: ProjectPatch, _: dict = Depends(manage
 ENTRY_SELECT = """
 SELECT e.id, e.user_id, u.name AS user_name, e.project_id, p.code AS project_code,
        p.name AS project_name, p.client AS project_client, e.activity_id, a.name AS activity_name,
-       e.work_date, e.start_time, e.end_time, e.break_minutes, e.hours, e.description, e.status
+       e.work_date, e.start_time, e.end_time, e.break_minutes, e.hours, e.description, e.status,
+       e.review_note, r.name AS reviewer_name, e.reviewed_at
 FROM entries e
 JOIN users u ON u.id = e.user_id
 JOIN projects p ON p.id = e.project_id
 LEFT JOIN activities a ON a.id = e.activity_id
+LEFT JOIN users r ON r.id = e.reviewed_by
 """
 
 
@@ -611,13 +621,33 @@ def update_entry(entry_id: int, body: EntryIn, user: dict = Depends(current_user
         if current["project_id"] != body.project_id:
             _check_allocated(conn, body.project_id, user)
         _check_activity(conn, body.activity_id)
+        # Corrigir um apontamento rejeitado o reenvia para aprovação.
         conn.execute(
             """UPDATE entries SET project_id = ?, activity_id = ?, work_date = ?, start_time = ?, end_time = ?,
-                                  break_minutes = ?, hours = ?, description = ?
+                                  break_minutes = ?, hours = ?, description = ?,
+                                  status = CASE WHEN status = 'rejeitado' THEN 'enviado' ELSE status END
                WHERE id = ?""",
             (*_entry_values(body), entry_id),
         )
     return {"ok": True, "hours": body.hours}
+
+
+@app.post("/entries/review")
+def review_entries(body: ReviewIn, user: dict = Depends(manager)):
+    """Gestor aprova, rejeita (com motivo opcional) ou reabre apontamentos. Aprovado trava para o projetista."""
+    ids = sorted(set(body.ids))
+    marks = ", ".join("?" * len(ids))
+    note = body.note.strip() if body.status == "rejeitado" else ""
+    with connect() as conn:
+        found = conn.execute(f"SELECT COUNT(*) AS n FROM entries WHERE id IN ({marks})", tuple(ids)).fetchone()["n"]
+        if found != len(ids):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Lançamento não encontrado.")
+        conn.execute(
+            f"""UPDATE entries SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?
+                WHERE id IN ({marks})""",
+            (body.status, note, user["id"], utcnow().isoformat(timespec="seconds"), *ids),
+        )
+    return {"updated": len(ids)}
 
 
 @app.delete("/entries/{entry_id}", status_code=204)

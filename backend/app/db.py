@@ -163,6 +163,10 @@ MIGRATIONS = [
     ("timers", "activity_id", "INTEGER"),
     # Cada pessoa escolhe se usa o cronômetro.
     ("users", "use_timer", "INTEGER NOT NULL DEFAULT 1"),
+    # Aprovação pelo gestor: motivo da rejeição, quem revisou e quando.
+    ("entries", "review_note", "TEXT NOT NULL DEFAULT ''"),
+    ("entries", "reviewed_by", "INTEGER"),
+    ("entries", "reviewed_at", "TEXT"),
 ]
 
 # Atividades da equipe de projetos (apertadeiras e automação industrial). Editáveis em Gestão.
