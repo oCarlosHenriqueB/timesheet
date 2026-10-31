@@ -67,8 +67,6 @@ cd app && flutter analyze && flutter test        # 34 testes
 
 ## Pendências
 
-- [ ] **Carlos: trocar a senha do banco no Neon** (Reset password do `neondb_owner`) e atualizar `DATABASE_URL`
-      no Render — a string antiga apareceu numa conversa.
 - [ ] Aprovação de horas pelo gestor (status já existe; falta a tela em Gestão).
 - [ ] Conexão direta com SAP (`SAP_PROVIDER=odata` responde 501; depende do TI: perguntas no README).
 - [ ] Para uso real: troca de senha pelo próprio usuário, expiração de sessão, hospedagem interna, LGPD.
